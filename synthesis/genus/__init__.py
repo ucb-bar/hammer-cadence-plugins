@@ -36,7 +36,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
     @property
     def env_vars(self) -> Dict[str, str]:
         new_dict = dict(super().env_vars)
-        new_dict.update({}) # TODO: stuffs
+        new_dict["GENUS_BIN"] = self.get_setting("synthesis.genus.genus_bin")
         return new_dict
 
     def export_config_outputs(self) -> Dict[str, Any]:
