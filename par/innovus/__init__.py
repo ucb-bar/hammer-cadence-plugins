@@ -9,7 +9,7 @@ from typing import List, Dict
 
 import os
 
-from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerVLSILogging, HammerToolStep
+from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerVLSILogging, HammerToolStep, PlacementConstraintType
 
 
 # Notes: camelCase commands are the old syntax (deprecated)
@@ -221,11 +221,55 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # TODO(edwardw): proper source locators/SourceInfo
         output.append("# Floorplan automatically generated from HAMMER")
 
-        # TODO: implement floorplan generation
-        output.append("create_floorplan -core_margins_by die -die_size_by_io_height max -die_size {1100.0 400.0 100 100 100 100}")
+        # Top-level chip size constraint.
+        # create_floorplan -die_size {...}
+        chip_size_constraint = "create_floorplan -core_margins_by die -die_size_by_io_height max -die_size {1000.0 1000.0 100 100 100 100}"  # type: str
         # extra junk: -site core
 
-        return output
+        floorplan_constraints = self.get_placement_constraints()
+        for constraint in floorplan_constraints:
+            # Floorplan names/insts need to not include the top-level module,
+            # despite the internal get_db commands including the top-level module...
+            # e.g. Top/foo/bar -> foo/bar
+            new_path = "/".join(constraint.path.split("/")[1:])
+
+            if new_path == "":
+                assert constraint.type == PlacementConstraintType.TopLevel, "Top must be a top-level/chip size constraint"
+                margins = constraint.margins
+                assert margins is not None
+                # Set top-level chip dimensions.
+                chip_size_constraint = ("create_floorplan -core_margins_by die -die_size_by_io_height max " +
+                                        "-die_size {{ {w} {h} {left} {bottom} {right} {top} }}").format(
+                    w=constraint.width,
+                    h=constraint.height,
+                    left=margins.left,
+                    bottom=margins.bottom,
+                    right=margins.right,
+                    top=margins.top
+                )
+            else:
+                if constraint.type == PlacementConstraintType.Dummy:
+                    pass
+                elif constraint.type == PlacementConstraintType.Placement:
+                    output.append("create_guide -name {name} -area {x1} {y1} {x2} {y2}".format(
+                        name=new_path,
+                        x1=constraint.x,
+                        x2=constraint.x + constraint.width,
+                        y1=constraint.y,
+                        y2=constraint.y + constraint.height
+                    ))
+                elif constraint.type == PlacementConstraintType.HardMacro:
+                    output.append("place_inst {inst} {x} {y} {orientation}".format(
+                        inst=new_path,
+                        x=constraint.x,
+                        y=constraint.y,
+                        orientation="r0"  # TODO(edwardw): update once orientation is implemented
+                    ))
+                elif constraint.type == PlacementConstraintType.Hierarchical:
+                    raise NotImplementedError("Hierarchical not implemented yet")
+                else:
+                    assert False, "Should not reach here"
+        return [chip_size_constraint] + output
 
 
 tool = Innovus()

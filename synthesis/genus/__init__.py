@@ -138,6 +138,10 @@ class Genus(HammerSynthesisTool, CadenceTool):
         verbose_append("elaborate {}".format(self.top_module))
         verbose_append("init_design -top {}".format(self.top_module))
 
+        # Prevent floorplanning targets from getting flattened.
+        # TODO: is there a way to track instance paths through the synthesis process?
+        verbose_append("set_db root: .auto_ungroup none")
+
         # Set units to pF and ns.
         # Must be done after elaboration.
         verbose_append("set_units -capacitance 1.0pF")
