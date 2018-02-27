@@ -9,6 +9,7 @@ from hammer_vlsi import HammerToolStep
 from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
 from hammer_vlsi import HammerVLSILogging
+from hammer_vlsi import MMMCCornerType
 
 from typing import Dict, List, Any
 
@@ -170,7 +171,13 @@ class Genus(HammerSynthesisTool, CadenceTool):
         verbose_append("write_hdl > {}".format(self.mapped_v_path))
         verbose_append("write_script > {}.mapped.scr".format(top))
         # TODO: remove hardcoded my_view string
-        verbose_append("write_sdc -view my_view > {}".format(self.mapped_sdc_path))
+        view_name = "my_view"
+        corners = self.get_mmmc_corners()
+        if(corners):
+            for corner in corners:
+                if(corner.type is MMMCCornerType.Setup):
+                    view_name = "{cname}.setup_view".format(cname=corner.name)
+        verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
         verbose_append("write_design -innovus -gzip_files {}".format(top))
 
         self.ran_write_outputs = True
