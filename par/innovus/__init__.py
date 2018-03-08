@@ -57,6 +57,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def steps(self) -> List[HammerToolStep]:
         return self.make_steps_from_methods([
             self.init_design,
+            self.floorplan_design,
             self.place_opt_design,
             self.route_design,
             self.opt_design,
@@ -103,12 +104,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Set design effort.
         verbose_append("set_db design_flow_effort {}".format(self.get_setting("par.innovus.design_flow_effort")))
+        return True
 
+    def floorplan_design(self) -> bool:
         floorplan_tcl = os.path.join(self.run_dir, "floorplan.tcl")
         with open(floorplan_tcl, "w") as f:
             f.write("\n".join(self.create_floorplan_tcl()))
-        verbose_append("source -echo -verbose {}".format(floorplan_tcl))
-
+        self.verbose_append("source -echo -verbose {}".format(floorplan_tcl))
         return True
 
     def place_opt_design(self) -> bool:
