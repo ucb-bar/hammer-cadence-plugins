@@ -265,7 +265,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         inst=new_path,
                         x=constraint.x,
                         y=constraint.y,
-                        orientation=constraint.orientation if constraint.orientation != None else "r0" # TODO(edwardw): update once orientation is implemented
+                        orientation=constraint.orientation if constraint.orientation != None else "r0"
                     ))
                 elif constraint.type == PlacementConstraintType.Hierarchical:
                     raise NotImplementedError("Hierarchical not implemented yet")
