@@ -8,7 +8,8 @@ par.innovus:
 
   # Innovus version to use.
   # Used to locate the binary - e.g. the '171' in ${cadence.cadence_home}/INNOVUS/INNOVUS171/bin/innovus
-  version: "171"
+  # 171_ISR3 supports ILMs properly in contrast to 171.
+  version: "171_ISR3"
 
   # Design flow effort.
   # Valid options: express (fastest), standard, and extreme (slowest).
