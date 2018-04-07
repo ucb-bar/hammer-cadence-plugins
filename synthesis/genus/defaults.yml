@@ -10,19 +10,3 @@ synthesis.genus:
 
   # Generate the TCL file but do not run it yet.
   generate_only: false
-
-# Common Cadence settings.
-# TODO: move these to a shared file.
-cadence:
-  # Directory where synopsys tools are installed. Contains subfolders
-  # like INNOVUS, GENUS, etc.
-  cadence_home: ""
-
-  # License server information, to be overridden by some project generator.
-  # e.g. "port_a@server:port_b@server"
-  CDS_LIC_FILE: ""
-
-  # Extra environment variables.
-  # List of dictionaries of variable-values.
-  # e.g. "MY_VAR=foo" -> [ {"MY_VAR": "foo"} ]
-  extra_env_vars: []
