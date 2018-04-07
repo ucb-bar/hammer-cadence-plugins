@@ -213,6 +213,25 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             output.append("# Blank floorplan specified from HAMMER")
         return output
 
+    @staticmethod
+    def generate_chip_size_constraint(width: float, height: float, left: float, bottom: float, right: float,
+                                      top: float) -> str:
+        """
+        Given chip width/height and margins, generate an Innovus TCL command to create the floorplan.
+        """
+        # not sure where the core in "-site core" comes into play
+        # -flip -f allows standard cells to be flipped correctly during place-and-route
+        return ("create_floorplan -core_margins_by die -flip f "
+                "-die_size_by_io_height max "
+                "-die_size {{ {width} {height} {left} {bottom} {right} {top} }}").format(
+            width=width,
+            height=height,
+            left=left,
+            bottom=bottom,
+            right=right,
+            top=top
+        )
+
     def generate_floorplan_tcl(self) -> List[str]:
         """
         Generate a TCL floorplan for Innovus based on the input config/IR.
@@ -224,9 +243,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         output.append("# Floorplan automatically generated from HAMMER")
 
         # Top-level chip size constraint.
-        # create_floorplan -die_size {...}
-        chip_size_constraint = "create_floorplan -core_margins_by die -die_size_by_io_height max -die_size {1000.0 1000.0 100 100 100 100}"  # type: str
-        # extra junk: -site core
+        # Default/fallback constraints if no other constraints are provided.
+        chip_size_constraint = self.generate_chip_size_constraint(
+            width=1000.0, height=1000.0,
+            left=100, bottom=100, right=100, top=100
+        )
 
         floorplan_constraints = self.get_placement_constraints()
         for constraint in floorplan_constraints:
@@ -240,10 +261,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 margins = constraint.margins
                 assert margins is not None
                 # Set top-level chip dimensions.
-                chip_size_constraint = ("create_floorplan -core_margins_by die -die_size_by_io_height max " +
-                                        "-die_size {{ {w} {h} {left} {bottom} {right} {top} }}").format(
-                    w=constraint.width,
-                    h=constraint.height,
+                chip_size_constraint = self.generate_chip_size_constraint(
+                    width=constraint.width,
+                    height=constraint.height,
                     left=margins.left,
                     bottom=margins.bottom,
                     right=margins.right,
