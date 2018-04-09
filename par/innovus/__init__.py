@@ -5,7 +5,7 @@
 #
 #  Copyright 2018 Edward Wang <edward.c.wang@compdigitec.com>
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import os
 
@@ -215,15 +215,22 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     @staticmethod
     def generate_chip_size_constraint(width: float, height: float, left: float, bottom: float, right: float,
-                                      top: float) -> str:
+                                      top: float, site: Optional[str]) -> str:
         """
         Given chip width/height and margins, generate an Innovus TCL command to create the floorplan.
+        Also requires a technology specific name for the core site
         """
-        # not sure where the core in "-site core" comes into play
+
+        if site is None:
+            site_str = ""
+        else:
+            site_str = "-site " + str(site)
+
         # -flip -f allows standard cells to be flipped correctly during place-and-route
         return ("create_floorplan -core_margins_by die -flip f "
-                "-die_size_by_io_height max "
+                "-die_size_by_io_height max {site_str} "
                 "-die_size {{ {width} {height} {left} {bottom} {right} {top} }}").format(
+            site_str=site_str,
             width=width,
             height=height,
             left=left,
@@ -245,6 +252,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Top-level chip size constraint.
         # Default/fallback constraints if no other constraints are provided.
         chip_size_constraint = self.generate_chip_size_constraint(
+            site=None,
             width=1000.0, height=1000.0,
             left=100, bottom=100, right=100, top=100
         )
@@ -261,7 +269,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 margins = constraint.margins
                 assert margins is not None
                 # Set top-level chip dimensions.
+                site = self.get_setting("vlsi.technology.placement_site", "")  # type: Optional[str]
+                if site == "":
+                    site = None
                 chip_size_constraint = self.generate_chip_size_constraint(
+                    site=site,
                     width=constraint.width,
                     height=constraint.height,
                     left=margins.left,
