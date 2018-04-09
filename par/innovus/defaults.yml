@@ -25,3 +25,11 @@ par.innovus:
   # TODO(edwardw): Put in new floorplanning thing here when done.
   floorplan_mode: generate
   floorplan_script_contents: null
+
+  # Power straps configuration.
+  # Valid options are:
+  # - blank - Specify no power straps
+  # - manual - Specify the contents of a manual TCL script to use, specified in power_straps_script_contents.
+  # - generate - Generate power straps from config/IR. (not implemented yet)
+  power_straps_mode: blank
+  power_straps_script_contents: null

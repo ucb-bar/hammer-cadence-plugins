@@ -58,6 +58,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return self.make_steps_from_methods([
             self.init_design,
             self.floorplan_design,
+            self.power_straps,
             self.place_opt_design,
             self.route_design,
             self.opt_design,
@@ -111,6 +112,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         with open(floorplan_tcl, "w") as f:
             f.write("\n".join(self.create_floorplan_tcl()))
         self.verbose_append("source -echo -verbose {}".format(floorplan_tcl))
+        return True
+
+    def power_straps(self) -> bool:
+        power_straps_tcl = os.path.join(self.run_dir, "power_straps.tcl")
+        with open(power_straps_tcl, "w") as f:
+            f.write("\n".join(self.create_power_straps_tcl()))
+        self.verbose_append("source -echo -verbose {}".format(power_straps_tcl))
         return True
 
     def place_opt_design(self) -> bool:
@@ -213,6 +221,28 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             output.append("# Blank floorplan specified from HAMMER")
         return output
 
+    def create_power_straps_tcl(self) -> List[str]:
+        """
+        Create power straps TCL commands depending on the mode.
+        """
+        output = []  # type: List[str]
+
+        power_straps_mode = str(self.get_setting("par.innovus.power_straps_mode"))
+        if power_straps_mode == "manual":
+            power_straps_script_contents = str(self.get_setting("par.innovus.power_straps_script_contents"))
+            # TODO(edwardw): proper source locators/SourceInfo
+            output.append("# Power straps script manually specified from HAMMER")
+            output.extend(power_straps_script_contents.split("\n"))
+        elif power_straps_mode == "generate":
+            output.extend(self.generate_power_straps_tcl())
+        else:
+            if power_straps_mode != "blank":
+                self.logger.error(
+                    "Invalid power_straps_mode {mode}. Using blank power straps script.".format(mode=power_straps_mode))
+            # Write blank floorplan
+            output.append("# Blank power straps script specified from HAMMER")
+        return output
+
     @staticmethod
     def generate_chip_size_constraint(width: float, height: float, left: float, bottom: float, right: float,
                                       top: float, site: Optional[str]) -> str:
@@ -304,6 +334,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 else:
                     assert False, "Should not reach here"
         return [chip_size_constraint] + output
+
+    def generate_power_straps_tcl(self) -> List[str]:
+        """
+        Generate a TCL script to create power straps from the config/IR.
+        :return: Power straps TCL script.
+        """
+        raise NotImplementedError("Not implemented yet")
 
 
 tool = Innovus()
