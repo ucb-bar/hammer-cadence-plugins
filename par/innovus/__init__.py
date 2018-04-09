@@ -164,7 +164,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             f.write("""
         cd {run_dir}
         source enter
-        $INNOVUS_BIN -common_ui -files generated-scripts/open_chip.tcl
+        $INNOVUS_BIN -common_ui -win -files generated-scripts/open_chip.tcl
                 """.format(run_dir=self.run_dir))
         self.run_executable([
             "chmod", "+x", os.path.join(generated_scripts_dir, "open_chip")
