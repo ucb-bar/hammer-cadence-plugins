@@ -4,12 +4,13 @@
 #  hammer-vlsi plugin for Cadence Innovus.
 #
 #  Copyright 2018 Edward Wang <edward.c.wang@compdigitec.com>
-
-from typing import List, Dict, Optional
+import shutil
+from typing import List, Dict, Optional, Callable
 
 import os
 
-from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerVLSILogging, HammerToolStep, PlacementConstraintType
+from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerVLSILogging, HammerToolStep, \
+    PlacementConstraintType, HierarchicalMode, ILMStruct
 
 
 # Notes: camelCase commands are the old syntax (deprecated)
@@ -17,6 +18,31 @@ from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerVLSILogging,
 # This plugin should only use snake_case commands.
 
 class Innovus(HammerPlaceAndRouteTool, CadenceTool):
+    def fill_outputs(self) -> bool:
+        if self.ran_write_ilm:
+            # Check that the ILMs got written.
+
+            ilm_data_dir = "{ilm_dir_name}/mmmc/ilm_data/{top}".format(ilm_dir_name=self.ilm_dir_name,
+                                                                       top=self.top_module)
+            postRoute_v_gz = os.path.join(ilm_data_dir, "{top}_postRoute.v.gz".format(top=self.top_module))
+
+            if not os.path.isfile(postRoute_v_gz):
+                raise ValueError("ILM output postRoute.v.gz %s not found" % (postRoute_v_gz))
+
+            # Copy postRoute.v.gz to postRoute.ilm.v.gz since that's what Genus seems to expect.
+            postRoute_ilm_v_gz = os.path.join(ilm_data_dir, "{top}_postRoute.ilm.v.gz".format(top=self.top_module))
+            shutil.copyfile(postRoute_v_gz, postRoute_ilm_v_gz)
+
+            # Write output_ilms
+            self.output_ilms = [
+                ILMStruct(dir=ilm_data_dir, module=self.top_module,
+                          lef=os.path.join(self.run_dir, "{top}ILM.lef".format(top=self.top_module)))
+            ]
+        else:
+            self.output_ilms = []
+
+        return True
+
     @property
     def env_vars(self) -> Dict[str, str]:
         v = dict(super().env_vars)
@@ -55,7 +81,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     @property
     def steps(self) -> List[HammerToolStep]:
-        return self.make_steps_from_methods([
+        steps = [
             self.init_design,
             self.floorplan_design,
             self.power_straps,
@@ -63,7 +89,22 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.route_design,
             self.opt_design,
             self.write_design
-        ])
+        ]  # type: List[Callable[[], bool]]
+        if self.hierarchical_mode == HierarchicalMode.Flat:
+            # Nothing to do
+            pass
+        elif self.hierarchical_mode == HierarchicalMode.Root:
+            # All modules in hierarchical must write an ILM
+            steps += [self.write_ilm]
+        elif self.hierarchical_mode == HierarchicalMode.Hierarchical:
+            # All modules in hierarchical must write an ILM
+            steps += [self.write_ilm]
+        elif self.hierarchical_mode == HierarchicalMode.Top:
+            # All modules in hierarchical must write an ILM
+            steps += [self.write_ilm]
+        else:
+            raise NotImplementedError("HierarchicalMode not implemented: " + str(self.hierarchical_mode))
+        return self.make_steps_from_methods(steps)
 
     def init_design(self) -> bool:
         """Initialize the design."""
@@ -79,6 +120,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         lef_files = self.read_libs([
             self.lef_filter
         ], self.to_plain_item)
+        if self.hierarchical_mode.is_nonroot_hierarchical():
+            ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
+            lef_files.extend(ilm_lefs)
         verbose_append("read_physical -lef {{ {files} }}".format(
             files=" ".join(lef_files)
         ))
@@ -169,6 +213,29 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.run_executable([
             "chmod", "+x", os.path.join(generated_scripts_dir, "open_chip")
         ])
+        return True
+
+    @property
+    def ran_write_ilm(self) -> bool:
+        """The write_ilm stage sets this to True if it was run."""
+        return self.attr_getter("_ran_write_ilm", False)
+
+    @ran_write_ilm.setter
+    def ran_write_ilm(self, val: bool) -> None:
+        self.attr_setter("_ran_write_ilm", val)
+
+    @property
+    def ilm_dir_name(self) -> str:
+        return os.path.join(self.run_dir, "{top}ILMDir".format(top=self.top_module))
+
+    def write_ilm(self) -> bool:
+        """Run time_design and write out the ILM."""
+        self.verbose_append("time_design -post_route")
+        self.verbose_append("time_design -post_route -hold")
+        self.verbose_append("write_lef_abstract -5.8 {top}ILM.lef".format(top=self.top_module))
+        self.verbose_append("write_ilm -model_type all -to_dir {ilm_dir_name} -type_flex_ilm ilm".format(
+            ilm_dir_name=self.ilm_dir_name))
+        self.ran_write_ilm = True
         return True
 
     def run_innovus(self) -> bool:
@@ -330,7 +397,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         orientation=constraint.orientation if constraint.orientation != None else "r0"
                     ))
                 elif constraint.type == PlacementConstraintType.Hierarchical:
-                    raise NotImplementedError("Hierarchical not implemented yet")
+                    raise ValueError("Hierarchical should have been resolved and turned into a hard macro by now")
                 else:
                     assert False, "Should not reach here"
         return [chip_size_constraint] + output
