@@ -343,4 +343,4 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         raise NotImplementedError("Not implemented yet")
 
 
-tool = Innovus()
+tool = Innovus

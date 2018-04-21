@@ -218,4 +218,4 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return True
 
 
-tool = Genus()
+tool = Genus
