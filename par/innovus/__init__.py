@@ -87,7 +87,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.power_straps,
             self.place_opt_design,
             self.route_design,
-            self.opt_design,
+            self.opt_design
+        ]
+        write_design_step = [
             self.write_design
         ]  # type: List[Callable[[], bool]]
         if self.hierarchical_mode == HierarchicalMode.Flat:
@@ -95,16 +97,16 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             pass
         elif self.hierarchical_mode == HierarchicalMode.Root:
             # All modules in hierarchical must write an ILM
-            steps += [self.write_ilm]
+            write_design_step += [self.write_ilm]
         elif self.hierarchical_mode == HierarchicalMode.Hierarchical:
             # All modules in hierarchical must write an ILM
-            steps += [self.write_ilm]
+            write_design_step += [self.write_ilm]
         elif self.hierarchical_mode == HierarchicalMode.Top:
-            # All modules in hierarchical must write an ILM
-            steps += [self.write_ilm]
+            # No need to write ILM at the top.
+            pass
         else:
             raise NotImplementedError("HierarchicalMode not implemented: " + str(self.hierarchical_mode))
-        return self.make_steps_from_methods(steps)
+        return self.make_steps_from_methods(steps + write_design_step)
 
     def init_design(self) -> bool:
         """Initialize the design."""
