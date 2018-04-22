@@ -103,6 +103,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             write_design_step += [self.write_ilm]
         elif self.hierarchical_mode == HierarchicalMode.Top:
             # No need to write ILM at the top.
+            # Top needs assemble_design instead.
+            steps += [self.assemble_design]
             pass
         else:
             raise NotImplementedError("HierarchicalMode not implemented: " + str(self.hierarchical_mode))
@@ -180,6 +182,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def opt_design(self) -> bool:
         """Post-route optimization and fix setup & hold time violations."""
         self.verbose_append("opt_design -post_route -setup -hold")
+        return True
+
+    def assemble_design(self) -> bool:
+        # TODO: implement the assemble_design step.
         return True
 
     @property
