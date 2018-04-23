@@ -33,9 +33,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             postRoute_ilm_v_gz = os.path.join(ilm_data_dir, "{top}_postRoute.ilm.v.gz".format(top=self.top_module))
             shutil.copyfile(postRoute_v_gz, postRoute_ilm_v_gz)
 
-            # Write output_ilms
+            # Write output_ilms.
             self.output_ilms = [
-                ILMStruct(dir=ilm_data_dir, module=self.top_module,
+                ILMStruct(dir=self.ilm_dir_name, data_dir=ilm_data_dir, module=self.top_module,
                           lef=os.path.join(self.run_dir, "{top}ILM.lef".format(top=self.top_module)))
             ]
         else:

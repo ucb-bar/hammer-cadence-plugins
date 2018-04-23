@@ -153,9 +153,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
             # Read ILMs.
             for ilm in self.get_input_ilms():
                 # Assumes that the ILM was created by Innovus (or at least the file/folder structure).
-                verbose_append(
-                    "read_ilm -basename {dir}/{module}_postRoute -module_name {module}".format(dir=ilm.dir,
-                                                                                               module=ilm.module))
+                verbose_append("read_ilm -basename {data_dir}/{module}_postRoute -module_name {module}".format(
+                    data_dir=ilm.data_dir, module=ilm.module))
 
         # Read LEF layouts.
         lef_files = self.read_libs([
