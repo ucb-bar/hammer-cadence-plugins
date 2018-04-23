@@ -148,6 +148,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             top=self.top_module
         ))
 
+        if self.hierarchical_mode.is_nonroot_hierarchical():
+            # Read ILMs.
+            for ilm in self.get_input_ilms():
+                # Assumes that the ILM was created by Innovus (or at least the file/folder structure).
+                verbose_append("read_ilm -cell {module} -directory {dir}".format(dir=ilm.dir, module=ilm.module))
+
         # Run init_design to validate data and start the Cadence place-and-route workflow.
         verbose_append("init_design")
 
