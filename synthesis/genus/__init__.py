@@ -149,7 +149,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
             f.write(self.generate_mmmc_script())
         verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
-        if self.hierarchical_mode.is_nonroot_hierarchical():
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
             # Read ILMs.
             for ilm in self.get_input_ilms():
                 # Assumes that the ILM was created by Innovus (or at least the file/folder structure).
@@ -160,7 +160,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         lef_files = self.read_libs([
             self.lef_filter
         ], self.to_plain_item)
-        if self.hierarchical_mode.is_nonroot_hierarchical():
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
             ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
             lef_files.extend(ilm_lefs)
         verbose_append("read_physical -lef {{ {files} }}".format(
@@ -174,7 +174,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         abspath_input_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  # type: List[str]
 
         # If we are in hierarchical, we need to remove hierarchical sub-modules/sub-blocks.
-        if self.hierarchical_mode.is_nonroot_hierarchical():
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
             abspath_input_files = list(map(self.remove_hierarchical_submodules_from_file, abspath_input_files))
 
         # Read the RTL.
@@ -226,7 +226,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         # -hierarchical doesn't work for anything but the root
         # We just get "Cannot trace ILM directory. Data corrupted."
-        is_hier = self.hierarchical_mode == HierarchicalMode.Root # self.hierarchical_mode != HierarchicalMode.Flat
+        is_hier = self.hierarchical_mode == HierarchicalMode.Leaf # self.hierarchical_mode != HierarchicalMode.Flat
         verbose_append("write_design -innovus {hier_flag} -gzip_files {top}".format(
             hier_flag="-hierarchical" if is_hier else "", top=top))
 

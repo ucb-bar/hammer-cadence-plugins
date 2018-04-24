@@ -95,7 +95,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         if self.hierarchical_mode == HierarchicalMode.Flat:
             # Nothing to do
             pass
-        elif self.hierarchical_mode == HierarchicalMode.Root:
+        elif self.hierarchical_mode == HierarchicalMode.Leaf:
             # All modules in hierarchical must write an ILM
             write_design_step += [self.write_ilm]
         elif self.hierarchical_mode == HierarchicalMode.Hierarchical:
@@ -124,7 +124,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         lef_files = self.read_libs([
             self.lef_filter
         ], self.to_plain_item)
-        if self.hierarchical_mode.is_nonroot_hierarchical():
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
             ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
             lef_files.extend(ilm_lefs)
         verbose_append("read_physical -lef {{ {files} }}".format(
@@ -141,14 +141,15 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Innovus only supports structural Verilog for the netlist.
         if not self.check_input_files([".v"]):
             return False
-        # We are switching working directories and Genus still needs to find paths.
+
+        # We are switching working directories and we still need to find paths.
         abspath_input_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))
         verbose_append("read_netlist {{ {files} }} -top {top}".format(
             files=" ".join(abspath_input_files),
             top=self.top_module
         ))
 
-        if self.hierarchical_mode.is_nonroot_hierarchical():
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
             # Read ILMs.
             for ilm in self.get_input_ilms():
                 # Assumes that the ILM was created by Innovus (or at least the file/folder structure).
