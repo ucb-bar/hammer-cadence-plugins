@@ -177,6 +177,12 @@ class Genus(HammerSynthesisTool, CadenceTool):
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             abspath_input_files = list(map(self.remove_hierarchical_submodules_from_file, abspath_input_files))
 
+        # Add any verilog_synth wrappers (which are needed in some technologies e.g. for SRAMs) which need to be
+        # synthesized.
+        abspath_input_files += self.read_libs([
+            self.verilog_synth_filter
+        ], self.to_plain_item)
+
         # Read the RTL.
         verbose_append("read_hdl {{ {} }}".format(" ".join(abspath_input_files)))
 
