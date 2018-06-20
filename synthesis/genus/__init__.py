@@ -11,12 +11,17 @@ from hammer_vlsi import HammerSynthesisTool
 from hammer_vlsi import HammerVLSILogging
 from hammer_vlsi import MMMCCornerType
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 import os
 
 
 class Genus(HammerSynthesisTool, CadenceTool):
+    @property
+    def post_synth_sdc(self) -> Optional[str]:
+        # No post-synth SDC input for synthesis...
+        return None
+
     def fill_outputs(self) -> bool:
         # Check that the mapped.v exists if the synthesis run was successful
         # TODO: move this check upwards?
