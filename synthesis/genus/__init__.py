@@ -8,7 +8,7 @@
 from hammer_vlsi import HammerToolStep, VerilogUtils, HierarchicalMode
 from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
-from hammer_vlsi import HammerVLSILogging
+from hammer_logging import HammerVLSILogging
 from hammer_vlsi import MMMCCornerType
 
 from typing import Dict, List, Any, Optional
@@ -229,10 +229,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # TODO: remove hardcoded my_view string
         view_name = "my_view"
         corners = self.get_mmmc_corners()
-        if(corners):
-            for corner in corners:
-                if(corner.type is MMMCCornerType.Setup):
-                    view_name = "{cname}.setup_view".format(cname=corner.name)
+        for corner in corners:
+            if corner.type is MMMCCornerType.Setup:
+                view_name = "{cname}.setup_view".format(cname=corner.name)
         verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
 
         # -hierarchical doesn't work for anything but the root

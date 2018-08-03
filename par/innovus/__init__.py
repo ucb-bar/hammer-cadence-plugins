@@ -9,8 +9,9 @@ from typing import List, Dict, Optional, Callable
 
 import os
 
-from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerVLSILogging, HammerToolStep, \
+from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
     PlacementConstraintType, HierarchicalMode, ILMStruct
+from hammer_logging import HammerVLSILogging
 
 
 # Notes: camelCase commands are the old syntax (deprecated)
