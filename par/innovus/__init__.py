@@ -410,7 +410,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         inst=new_path,
                         x=constraint.x,
                         y=constraint.y,
-                        orientation=constraint.orientation if constraint.orientation != None else "r0"
+                        orientation=constraint.orientation if constraint.orientation is not None else "r0"
                     ))
                 elif constraint.type == PlacementConstraintType.Obstruction:
                     if PlacementConstraintType.ObstructionType.Place in constraint.obs_types:
@@ -426,7 +426,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                             y=constraint.y,
                             urx=constraint.x+constraint.width,
                             ury=constraint.y+constraint.height,
-                            layers="all" if constraint.layers == None else " ".join(constraint.layers)
+                            layers="all" if constraint.layers is None else " ".join(constraint.layers)
                         ))
                     if PlacementConstraintType.ObstructionType.Power in constraint.obs_types:
                         output.append("create_route_blockage -pg_nets -layers {layers} -area {{{x} {y} {urx} {ury}}}".format(
@@ -434,7 +434,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                             y=constraint.y,
                             urx=constraint.x+constraint.width,
                             ury=constraint.y+constraint.height,
-                            layers="all" if constraint.layers == None else " ".join(constraint.layers)
+                            layers="all" if constraint.layers is None else " ".join(constraint.layers)
                         ))
                 elif constraint.type == PlacementConstraintType.Hierarchical:
                     raise ValueError("Hierarchical should have been resolved and turned into a hard macro by now")
