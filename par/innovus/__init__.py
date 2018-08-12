@@ -9,8 +9,9 @@ from typing import List, Dict, Optional, Callable
 
 import os
 
+from hammer_utils import get_or_else
 from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
-    PlacementConstraintType, HierarchicalMode, ILMStruct
+    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType
 from hammer_logging import HammerVLSILogging
 
 
@@ -413,28 +414,29 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         orientation=constraint.orientation if constraint.orientation is not None else "r0"
                     ))
                 elif constraint.type == PlacementConstraintType.Obstruction:
-                    if PlacementConstraintType.ObstructionType.Place in constraint.obs_types:
+                    obs_types = get_or_else(constraint.obs_types, [])  # type: List[ObstructionType]
+                    if ObstructionType.Place in obs_types:
                         output.append("create_place_blockage -area {{{x} {y} {urx} {ury}}}".format(
                             x=constraint.x,
                             y=constraint.y,
                             urx=constraint.x+constraint.width,
                             ury=constraint.y+constraint.height
                         ))
-                    if PlacementConstraintType.ObstructionType.Route in constraint.obs_types:
+                    if ObstructionType.Route in obs_types:
                         output.append("create_route_blockage -layers {layers} -spacing 0 -area {{{x} {y} {urx} {ury}}}".format(
                             x=constraint.x,
                             y=constraint.y,
                             urx=constraint.x+constraint.width,
                             ury=constraint.y+constraint.height,
-                            layers="all" if constraint.layers is None else " ".join(constraint.layers)
+                            layers="all" if constraint.layers is None else " ".join(get_or_else(constraint.layers, []))
                         ))
-                    if PlacementConstraintType.ObstructionType.Power in constraint.obs_types:
+                    if ObstructionType.Power in obs_types:
                         output.append("create_route_blockage -pg_nets -layers {layers} -area {{{x} {y} {urx} {ury}}}".format(
                             x=constraint.x,
                             y=constraint.y,
                             urx=constraint.x+constraint.width,
                             ury=constraint.y+constraint.height,
-                            layers="all" if constraint.layers is None else " ".join(constraint.layers)
+                            layers="all" if constraint.layers is None else " ".join(get_or_else(constraint.layers, []))
                         ))
                 elif constraint.type == PlacementConstraintType.Hierarchical:
                     raise ValueError("Hierarchical should have been resolved and turned into a hard macro by now")
