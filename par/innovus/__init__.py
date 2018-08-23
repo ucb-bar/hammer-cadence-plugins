@@ -197,6 +197,25 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # TODO: implement the assemble_design step.
         return True
 
+    def write_gds(self) -> bool:
+        gds_map_file = self.get_setting("par.inputs.gds_map_file")
+        # Not including the map_file flag includes all layers but with no specific layer numbers
+        map_file = "" if gds_map_file == null else "-map_file {}".format(gds_map_file)
+        gds_files = self.read_libs([
+            self.gds_filter
+        ], self.to_plain_item)
+        # If innovus is merging the GDS then we don't want to output the macros since we are including the GDS
+        # We do want to uniquify in case any of our macros have the same named components
+        merge_options = "-output_macros" if not self.get_setting("par.inputs.gds_merge") else "-uniquify_cell_names -merge {{ {} }}".format(
+            " ".join(gds_files)
+        )
+        # TODO: explanation for why we chose this unit parameter
+        self.verbose_append("write_stream -mode ALL -unit 1000 {map_file} {merge_options}".format(
+            map_file=map_file,
+            merge_options=merge_options
+        )
+        return True
+
     @property
     def output_innovus_lib_name(self) -> str:
         return "{top}_FINAL".format(top=self.top_module)
@@ -208,8 +227,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         ))
 
         # GDS streamout.
-        self.verbose_append("write_stream -output_macros -mode ALL -unit 1000 gds_file")
-        # extra junk: -map_file -attach_inst_name ... -attach_net_name ...
+        self.write_gds()
+        # extra junk: -attach_inst_name ... -attach_net_name ...
 
         # Make sure that generated-scripts exists.
         generated_scripts_dir = os.path.join(self.run_dir, "generated-scripts")
