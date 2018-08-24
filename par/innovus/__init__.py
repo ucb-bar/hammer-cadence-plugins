@@ -233,7 +233,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # GDS streamout.
         self.write_gds()
-        # extra junk: -attach_inst_name ... -attach_net_name ...
 
         # Make sure that generated-scripts exists.
         generated_scripts_dir = os.path.join(self.run_dir, "generated-scripts")
