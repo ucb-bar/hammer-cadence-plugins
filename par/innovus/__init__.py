@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Callable
 
 import os
 
-from hammer_utils import get_or_else
+from hammer_utils import get_or_else, optional_map
 from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType
 from hammer_logging import HammerVLSILogging
@@ -198,9 +198,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def write_gds(self) -> bool:
-        gds_map_file = self.get_setting("par.inputs.gds_map_file")
         # Not including the map_file flag includes all layers but with no specific layer numbers
-        map_file = "" if gds_map_file == null else "-map_file {}".format(gds_map_file)
+        gds_map_file = self.get_setting("par.inputs.gds_map_file")  # type: Optional[str]
+        map_file = get_or_else(
+            optional_map(gds_map_file, lambda f: "-map_file {}".format(f)),
+            ""
+        )
+
         gds_files = self.read_libs([
             self.gds_filter
         ], self.to_plain_item)
