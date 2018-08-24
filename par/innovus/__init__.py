@@ -213,7 +213,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.verbose_append("write_stream -mode ALL -unit 1000 {map_file} {merge_options}".format(
             map_file=map_file,
             merge_options=merge_options
-        )
+        ))
         return True
 
     @property
