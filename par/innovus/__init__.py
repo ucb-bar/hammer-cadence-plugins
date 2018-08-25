@@ -198,12 +198,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def write_gds(self) -> bool:
+        # Mode can be auto, empty, or manual
+        gds_map_mode = str(self.get_setting("par.inputs.gds_map_mode"))  # type: str
+
+        # gds_map_file will only be used in manual mode
         # Not including the map_file flag includes all layers but with no specific layer numbers
         gds_map_file = self.get_setting("par.inputs.gds_map_file")  # type: Optional[str]
-        map_file = get_or_else(
+        manual_map_file = get_or_else(
             optional_map(gds_map_file, lambda f: "-map_file {}".format(f)),
             ""
         )
+        # tech_map_file will only be used in auto mode
+        tech_map_file = self.technology.prepend_dir_path(self.technology.config.gds_map_file) # type: str
 
         gds_files = self.read_libs([
             self.gds_filter
@@ -213,6 +219,17 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         merge_options = "-output_macros" if not self.get_setting("par.inputs.gds_merge") else "-uniquify_cell_names -merge {{ {} }}".format(
             " ".join(gds_files)
         )
+        if gds_map_mode == "auto":
+            map_file = tech_map_file
+        elif gds_map_mode == "manual":
+            map_file = manual_map_file
+        elif gds_map_mode == "empty":
+            map_file = ""
+        else:
+            self.logger.error(
+                "Invalid gds_map_mode {mode}. Using auto gds map.".format(mode=gds_map_mode))
+            map_file = tech_map_file
+
         # TODO: explanation for why we chose this unit parameter
         self.verbose_append("write_stream -mode ALL -unit 1000 {map_file} {merge_options} {top}.gds".format(
             map_file=map_file,
