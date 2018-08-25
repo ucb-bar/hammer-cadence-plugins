@@ -140,8 +140,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
         # Read netlist.
-        # Innovus only supports structural Verilog for the netlist.
-        if not self.check_input_files([".v"]):
+        # Innovus only supports structural Verilog for the netlist; the Verilog can be optionally compressed.
+        if not self.check_input_files([".v", ".v.gz"]):
             return False
 
         # We are switching working directories and we still need to find paths.
