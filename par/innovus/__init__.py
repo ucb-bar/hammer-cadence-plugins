@@ -214,8 +214,24 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         gds_files = self.read_libs([
             self.gds_filter
         ], self.to_plain_item)
-        # If innovus is merging the GDS then we don't want to output the macros since we are including the GDS
-        # We do want to uniquify in case any of our macros have the same named components
+
+        # If we are not merging, then we want tou use -output_macros.
+        # output_macros means that Innovus should take any macros it has and
+        # just output the cells into the GDS. These cells will not have physical
+        # information inside them and will need to be merged with some other
+        # step later. We do not care about uniquifying them because Innovus will
+        # output a single cell for each instance (essentially already unique).
+
+        # On the other hand, if we tell Innovus to do the merge then it is going
+        # to get a GDS with potentially multiple child cells and we then tell it
+        # to uniquify these child cells in case of name collisons. Without that
+        # we could have one child that applies to all cells of that name which
+        # is often not what you want.
+        # For example, if macro ADC1 has a subcell Comparator which is different
+        # from ADC2's subcell Comparator, we don't want ADC1's Comparator to
+        # replace ADC2's Comparator.
+        # Note that cells not present in the GDSes to be merged will be emitted
+        # as-is in the output (like with -output_macros).
         merge_options = "-output_macros" if not self.get_setting("par.inputs.gds_merge") else "-uniquify_cell_names -merge {{ {} }}".format(
             " ".join(gds_files)
         )
