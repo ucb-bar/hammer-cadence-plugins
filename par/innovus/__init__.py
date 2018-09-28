@@ -5,7 +5,7 @@
 #
 #  Copyright 2018 Edward Wang <edward.c.wang@compdigitec.com>
 import shutil
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, Tuple
 
 import os
 
@@ -51,6 +51,19 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         v["INNOVUS_BIN"] = self.get_setting("par.innovus.innovus_bin")
         return v
 
+    @property
+    def _step_transitions(self) -> List[Tuple[str, str]]:
+        """
+        Private helper property to keep track of which steps we ran so that we
+        can create symlinks.
+        This is a list of (pre, post) steps
+        """
+        return self.attr_getter("__step_transitions", [])
+
+    @_step_transitions.setter
+    def _step_transitions(self, value: List[Tuple[str, str]]) -> None:
+        return self.attr_setter("__step_transitions", value)
+
     def do_pre_steps(self, first_step: HammerToolStep) -> bool:
         assert super().do_pre_steps(first_step)
         # Restore from the last checkpoint if we're not starting over.
@@ -62,10 +75,17 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         assert super().do_between_steps(prev, next)
         # Write a checkpoint to disk.
         self.verbose_append("write_db pre_{step}".format(step=next.name))
+        self._step_transitions = self._step_transitions + [(prev.name, next.name)]
         return True
 
     def do_post_steps(self) -> bool:
         assert super().do_post_steps()
+        # Create symlinks for post_<step> to pre_<step+1> to improve usability.
+        for prev, next in self._step_transitions:
+            os.symlink(
+                src=os.path.join(self.run_dir, "pre_{next}".format(next=next)),
+                dst=os.path.join(self.run_dir, "post_{prev}".format(prev=prev))
+            )
         return self.run_innovus()
 
     @property
