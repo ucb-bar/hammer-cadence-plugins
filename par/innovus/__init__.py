@@ -135,6 +135,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             raise NotImplementedError("HierarchicalMode not implemented: " + str(self.hierarchical_mode))
         return self.make_steps_from_methods(steps + write_design_step)
 
+    def tool_config_prefix(self) -> str:
+        return "par.innovus"
+
     def init_design(self) -> bool:
         """Initialize the design."""
         self.create_enter_script()

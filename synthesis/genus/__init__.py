@@ -51,6 +51,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
         outputs["synthesis.outputs.sdc"] = self.output_sdc
         return outputs
 
+    def tool_config_prefix(self) -> str:
+        return "synthesis.genus"
+
     @property
     def steps(self) -> List[HammerToolStep]:
         return self.make_steps_from_methods([
