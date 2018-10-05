@@ -84,8 +84,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         try:
             for prev, next in self._step_transitions:
                 os.symlink(
-                    src=os.path.join(self.run_dir, "pre_{next}".format(next=next)),
-                    dst=os.path.join(self.run_dir, "post_{prev}".format(prev=prev))
+                    os.path.join(self.run_dir, "pre_{next}".format(next=next)), # src
+                    os.path.join(self.run_dir, "post_{prev}".format(prev=prev)) # dst
                 )
         except OSError as e:
             self.logger.warning("Failed to create post_* symlinks: " + str(e))
