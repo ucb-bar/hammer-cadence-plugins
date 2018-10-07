@@ -208,6 +208,10 @@ class Genus(HammerSynthesisTool, CadenceTool):
         verbose_append("set_load_unit -picofarads 1")
         verbose_append("set_units -time 1.0ns")
 
+        # Set which cells we wont use
+        for cell in self.get_dont_use_list():
+            verbose_append("set_dont_use [get_db lib_cells {cell}]".format(cell=cell))
+
         return True
 
     def syn_generic(self) -> bool:
