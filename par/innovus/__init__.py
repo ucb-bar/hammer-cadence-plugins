@@ -62,7 +62,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     @_step_transitions.setter
     def _step_transitions(self, value: List[Tuple[str, str]]) -> None:
-        return self.attr_setter("__step_transitions", value)
+        self.attr_setter("__step_transitions", value)
 
     def do_pre_steps(self, first_step: HammerToolStep) -> bool:
         assert super().do_pre_steps(first_step)
