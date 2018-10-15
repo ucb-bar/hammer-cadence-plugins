@@ -7,7 +7,7 @@
 import shutil
 from typing import List, Dict, Optional, Callable, Tuple
 
-import os
+import os, errno
 
 from hammer_utils import get_or_else, optional_map
 from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
@@ -88,7 +88,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     os.path.join(self.run_dir, "post_{prev}".format(prev=prev)) # dst
                 )
         except OSError as e:
-            self.logger.warning("Failed to create post_* symlinks: " + str(e))
+            if e.errno != errno.EEXIST:
+                self.logger.warning("Failed to create post_* symlinks: " + str(e))
         return self.run_innovus()
 
     @property
