@@ -189,9 +189,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Set design effort.
         verbose_append("set_db design_flow_effort {}".format(self.get_setting("par.innovus.design_flow_effort")))
-        # Check for dont use list and set it
-        for cell in self.get_dont_use_list():
-            verbose_append("set_dont_use [get_db lib_cells {cell}]".format(cell=cell))
+
+        # Set "don't use" cells.
+        for l in self.generate_dont_use_commands():
+            self.append(l)
 
         return True
 
