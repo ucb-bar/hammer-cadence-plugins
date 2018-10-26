@@ -43,7 +43,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         else:
             self.output_ilms = []
 
+        self.output_gds = self.output_gds_filename
         return True
+
+    @property
+    def output_gds_filename(self) -> str:
+        return "{top}.gds".format(top=self.top_module)
 
     @property
     def env_vars(self) -> Dict[str, str]:
@@ -261,10 +266,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         )
 
         # TODO: explanation for why we chose this unit parameter
-        self.verbose_append("write_stream -mode ALL -unit 1000 {map_file} {merge_options} {top}.gds".format(
+        self.verbose_append("write_stream -mode ALL -unit 1000 {map_file} {merge_options} {gds}".format(
             map_file=map_file,
             merge_options=merge_options,
-            top=self.top_module
+            gds=self.output_gds_filename
         ))
         return True
 
