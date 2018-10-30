@@ -44,11 +44,19 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.output_ilms = []
 
         self.output_gds = self.output_gds_filename
+        self.output_netlist = self.output_netlist_filename
+        self.power_nets = ["VDD"]
+        self.ground_nets = ["VSS"]
+        self.hcells_list = []
         return True
 
     @property
     def output_gds_filename(self) -> str:
-        return "{top}.gds".format(top=self.top_module)
+        return os.path.join(self.run_dir, "{top}.gds".format(top=self.top_module))
+
+    @property
+    def output_netlist_filename(self) -> str:
+        return os.path.join(self.run_dir, "{top}.lvs.v".format(top=self.top_module))
 
     @property
     def env_vars(self) -> Dict[str, str]:
@@ -244,7 +252,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.gds_filter
         ], self.to_plain_item)
 
-        # If we are not merging, then we want tou use -output_macros.
+        # If we are not merging, then we want to use -output_macros.
         # output_macros means that Innovus should take any macros it has and
         # just output the cells into the GDS. These cells will not have physical
         # information inside them and will need to be merged with some other
