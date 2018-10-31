@@ -5,7 +5,8 @@
 #
 #  Copyright 2017-2018 Edward Wang <edward.c.wang@compdigitec.com>
 
-from hammer_vlsi import HammerToolStep, VerilogUtils, HierarchicalMode
+from hammer_vlsi import HammerToolStep, HierarchicalMode
+from hammer_utils import VerilogUtils
 from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
 from hammer_logging import HammerVLSILogging
