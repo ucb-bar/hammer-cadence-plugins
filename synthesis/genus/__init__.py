@@ -11,6 +11,7 @@ from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
 from hammer_logging import HammerVLSILogging
 from hammer_vlsi import MMMCCornerType
+import hammer_tech
 
 from typing import Dict, List, Any, Optional
 
@@ -166,8 +167,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
                     data_dir=ilm.data_dir, module=ilm.module))
 
         # Read LEF layouts.
-        lef_files = self.read_libs([
-            self.lef_filter
+        lef_files = self.technology.read_libs([
+            hammer_tech.filters.lef_filter
         ], self.to_plain_item)
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
@@ -188,8 +189,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         # Add any verilog_synth wrappers (which are needed in some technologies e.g. for SRAMs) which need to be
         # synthesized.
-        abspath_input_files += self.read_libs([
-            self.verilog_synth_filter
+        abspath_input_files += self.technology.read_libs([
+            hammer_tech.filters.verilog_synth_filter
         ], self.to_plain_item)
 
         # Read the RTL.

@@ -4,6 +4,7 @@
 #  hammer-vlsi plugin for Cadence Innovus.
 #
 #  Copyright 2018 Edward Wang <edward.c.wang@compdigitec.com>
+
 import shutil
 from typing import List, Dict, Optional, Callable, Tuple
 
@@ -13,6 +14,7 @@ from hammer_utils import get_or_else, optional_map
 from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType
 from hammer_logging import HammerVLSILogging
+import hammer_tech
 
 
 # Notes: camelCase commands are the old syntax (deprecated)
@@ -163,8 +165,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
         # Read LEF layouts.
-        lef_files = self.read_libs([
-            self.lef_filter
+        lef_files = self.technology.read_libs([
+            hammer_tech.filters.lef_filter
         ], self.to_plain_item)
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
@@ -248,8 +250,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             ""
         )
 
-        gds_files = self.read_libs([
-            self.gds_filter
+        gds_files = self.technology.read_libs([
+            hammer_tech.filters.gds_filter
         ], self.to_plain_item)
 
         # If we are not merging, then we want to use -output_macros.
