@@ -47,6 +47,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         self.output_gds = self.output_gds_filename
         self.output_netlist = self.output_netlist_filename
+        # TODO(johnwright): parametrize these
+        # ucb-bar/hammer-cad-plugins#30
         self.power_nets = ["VDD"]
         self.ground_nets = ["VSS"]
         self.hcells_list = []
