@@ -2,7 +2,7 @@
 synthesis.genus:
   # Location of the binary.
   genus_bin: "${cadence.cadence_home}/GENUS/GENUS${synthesis.genus.version}/bin/genus"
-  genus_bin_meta: dynamicsubst # we want later overrides to be able to affect this
+  genus_bin_meta: lazysubst # we want later overrides to be able to affect this
 
   # Genus version to use.
   # Used to locate the binary - e.g. the '171' in ${cadence.cadence_home}/GENUS/GENUS171/bin/genus

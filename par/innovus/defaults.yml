@@ -4,7 +4,7 @@
 par.innovus:
   # Location of the binary.
   innovus_bin: "${cadence.cadence_home}/INNOVUS/INNOVUS${par.innovus.version}/bin/innovus"
-  innovus_bin_meta: dynamicsubst # we want later overrides to be able to affect this
+  innovus_bin_meta: lazysubst # we want later overrides to be able to affect this
 
   # Innovus version to use.
   # Used to locate the binary - e.g. the '171' in ${cadence.cadence_home}/INNOVUS/INNOVUS171/bin/innovus
