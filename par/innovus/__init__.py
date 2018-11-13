@@ -246,6 +246,17 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # TODO: implement the assemble_design step.
         return True
 
+    def write_netlist(self) -> bool:
+        # Output the Verilog netlist for the design and include physical cells (-phys) like decaps and fill
+        # TODO(johnwright): We may want to include a -exclude_insts_of_cells [...] here
+        # We may also want to include connect_global_net commands to tie body pins, although that feels like
+        # a separate logical step
+        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -phys -flat".format(
+            netlist=self.output_netlist_filename,
+            top=self.top_module
+        ))
+        return True
+
     def write_gds(self) -> bool:
         map_file = get_or_else(
             optional_map(self.get_gds_map_file(), lambda f: "-map_file {}".format(f)),
@@ -294,6 +305,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.verbose_append("write_db {lib_name} -def -verilog".format(
             lib_name=self.output_innovus_lib_name
         ))
+
+        # Write netlist
+        self.write_netlist()
 
         # GDS streamout.
         self.write_gds()
