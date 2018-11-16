@@ -169,7 +169,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # Read LEF layouts.
         lef_files = self.technology.read_libs([
             hammer_tech.filters.lef_filter
-        ], self.to_plain_item)
+        ], hammer_tech.HammerTechnologyUtils.to_plain_item)
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
             lef_files.extend(ilm_lefs)
@@ -191,7 +191,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # synthesized.
         abspath_input_files += self.technology.read_libs([
             hammer_tech.filters.verilog_synth_filter
-        ], self.to_plain_item)
+        ], hammer_tech.HammerTechnologyUtils.to_plain_item)
 
         # Read the RTL.
         verbose_append("read_hdl {{ {} }}".format(" ".join(abspath_input_files)))

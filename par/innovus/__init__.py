@@ -169,7 +169,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Read LEF layouts.
         lef_files = self.technology.read_libs([
             hammer_tech.filters.lef_filter
-        ], self.to_plain_item)
+        ], hammer_tech.HammerTechnologyUtils.to_plain_item)
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
             lef_files.extend(ilm_lefs)
@@ -265,7 +265,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         gds_files = self.technology.read_libs([
             hammer_tech.filters.gds_filter
-        ], self.to_plain_item)
+        ], hammer_tech.HammerTechnologyUtils.to_plain_item)
 
         # If we are not merging, then we want to use -output_macros.
         # output_macros means that Innovus should take any macros it has and
