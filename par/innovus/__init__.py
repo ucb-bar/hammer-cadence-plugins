@@ -204,6 +204,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Run init_design to validate data and start the Cadence place-and-route workflow.
         verbose_append("init_design")
 
+        # Setup power settings from cpf/upf
+        for l in self.generate_power_spec_commands():
+            verbose_append(l)
+
         # Set design effort.
         verbose_append("set_db design_flow_effort {}".format(self.get_setting("par.innovus.design_flow_effort")))
 
