@@ -278,6 +278,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def write_netlist(self) -> bool:
+        # Don't use virtual connects (using colon, e.g. VSS:) because they mess up LVS
+        self.verbose_append("set_db write_stream_virtual_connection false")
+
         # Output the Verilog netlist for the design and include physical cells (-phys) like decaps and fill
         # TODO(johnwright): We may want to include a -exclude_insts_of_cells [...] here
         # We may also want to include connect_global_net commands to tie body pins, although that feels like
