@@ -31,7 +31,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
             self.logger.info("Did not run write_outputs")
             return True
 
-        mapped_v = self.mapped_v_path
+        mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
         if not os.path.isfile(mapped_v):
             raise ValueError("Output mapped verilog %s not found" % (mapped_v)) # better error?
         self.output_files = [mapped_v]
@@ -93,6 +93,10 @@ class Genus(HammerSynthesisTool, CadenceTool):
     @property
     def mapped_v_path(self) -> str:
         return os.path.join(self.run_dir, "{}.mapped.v".format(self.top_module))
+
+    @property
+    def mapped_hier_v_path(self) -> str:
+        return os.path.join(self.run_dir, "genus_invs_des/genus.v.gz")
 
     @property
     def mapped_sdc_path(self) -> str:
@@ -198,6 +202,10 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         # Elaborate/parse the RTL.
         verbose_append("elaborate {}".format(self.top_module))
+        # Preserve submodules
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            for ilm in self.get_input_ilms():
+                verbose_append("set_db module:{top}/{mod} .preserve true".format(top=self.top_module, mod=ilm.module))
         verbose_append("init_design -top {}".format(self.top_module))
 
         # Prevent floorplanning targets from getting flattened.
@@ -244,9 +252,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
                 view_name = "{cname}.setup_view".format(cname=corner.name)
         verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
 
-        # -hierarchical doesn't work for anything but the root
         # We just get "Cannot trace ILM directory. Data corrupted."
-        is_hier = self.hierarchical_mode == HierarchicalMode.Leaf # self.hierarchical_mode != HierarchicalMode.Flat
+        # -hierarchical needs to be used for non-leaf modules
+        is_hier = self.hierarchical_mode != HierarchicalMode.Leaf # self.hierarchical_mode != HierarchicalMode.Flat
         verbose_append("write_design -innovus {hier_flag} -gzip_files {top}".format(
             hier_flag="-hierarchical" if is_hier else "", top=top))
 
