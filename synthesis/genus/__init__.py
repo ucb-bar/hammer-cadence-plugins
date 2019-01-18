@@ -226,7 +226,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def generate_reports(self) -> bool:
         """Generate reports."""
-        # TODO: implement report generation
+        # TODO: extend report generation capabilities
+        self.verbose_append("write_reports -directory reports -tag final")
         return True
 
     def write_outputs(self) -> bool:
