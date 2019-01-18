@@ -129,6 +129,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.floorplan_design,
             self.power_straps,
             self.place_opt_design,
+            self.clock_tree,
             self.route_design,
             self.opt_design
         ]
@@ -234,6 +235,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def place_opt_design(self) -> bool:
         """Place the design and do pre-routing optimization."""
         self.verbose_append("place_opt_design")
+        return True
+
+    def clock_tree(self) -> bool:
+        """Setup and route a clock tree for clock nets."""
+        self.verbose_append("create_clock_tree_spec")
+        self.verbose_append("ccopt_design -hold -report_dir hammer_cts_debug -report_prefix hammer_cts")
         return True
 
     def route_design(self) -> bool:
