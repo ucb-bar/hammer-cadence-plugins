@@ -3,7 +3,7 @@
 #
 #  hammer-vlsi plugin for Cadence Genus.
 #
-#  Copyright 2017-2018 Edward Wang <edward.c.wang@compdigitec.com>
+#  See LICENSE for licence details.
 
 from hammer_vlsi import HammerToolStep, HierarchicalMode
 from hammer_utils import VerilogUtils

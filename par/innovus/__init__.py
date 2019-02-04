@@ -3,7 +3,7 @@
 #
 #  hammer-vlsi plugin for Cadence Innovus.
 #
-#  Copyright 2018 Edward Wang <edward.c.wang@compdigitec.com>
+#  See LICENSE for licence details.
 
 import shutil
 from typing import List, Dict, Optional, Callable, Tuple
