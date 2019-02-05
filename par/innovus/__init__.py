@@ -239,8 +239,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def clock_tree(self) -> bool:
         """Setup and route a clock tree for clock nets."""
-        self.verbose_append("create_clock_tree_spec")
-        self.verbose_append("ccopt_design -hold -report_dir hammer_cts_debug -report_prefix hammer_cts")
+        if len(self.get_clock_ports()) > 0:
+            # Ignore clock tree when there are no clocks
+            self.verbose_append("create_clock_tree_spec")
+            self.verbose_append("ccopt_design -hold -report_dir hammer_cts_debug -report_prefix hammer_cts")
         return True
 
     def route_design(self) -> bool:
