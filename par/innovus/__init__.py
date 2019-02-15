@@ -15,6 +15,7 @@ from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType
 from hammer_logging import HammerVLSILogging
 import hammer_tech
+from stackup import RoutingDirection
 
 
 # Notes: camelCase commands are the old syntax (deprecated)
@@ -22,6 +23,18 @@ import hammer_tech
 # This plugin should only use snake_case commands.
 
 class Innovus(HammerPlaceAndRouteTool, CadenceTool):
+
+    # TODO(johnwright): this should come from the IR
+    # ucb-bar/hammer-cad-plugins#30
+    def ground_net_name(self):
+        return "VSS"
+
+    # TODO(johnwright): this should come from the IR
+    # ucb-bar/hammer-cad-plugins#30
+    def power_net_name(self):
+        return "VDD"
+
+
     def fill_outputs(self) -> bool:
         if self.ran_write_ilm:
             # Check that the ILMs got written.
@@ -49,8 +62,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.output_netlist = self.output_netlist_filename
         # TODO(johnwright): parametrize these
         # ucb-bar/hammer-cad-plugins#30
-        self.power_nets = ["VDD"]
-        self.ground_nets = ["VSS"]
+        self.power_nets = [self.power_net_name()]
+        self.ground_nets = [self.ground_net_name()]
         self.hcells_list = []
         return True
 
@@ -127,6 +140,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         steps = [
             self.init_design,
             self.floorplan_design,
+            self.place_tap_cells,
             self.power_straps,
             self.place_opt_design,
             self.clock_tree,
@@ -223,6 +237,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         with open(floorplan_tcl, "w") as f:
             f.write("\n".join(self.create_floorplan_tcl()))
         self.verbose_append("source -echo -verbose {}".format(floorplan_tcl))
+        return True
+
+    def place_tap_cells(self) -> bool:
+        # By default, do nothing
+        self.logger.warning("You have not overridden place_tap_cells. By default this step does nothing; you may have trouble with power strap creation later.")
         return True
 
     def power_straps(self) -> bool:
@@ -565,7 +584,170 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         Generate a TCL script to create power straps from the config/IR.
         :return: Power straps TCL script.
         """
-        raise NotImplementedError("Not implemented yet")
+        method = self.get_setting("par.generate_power_straps_method")
+        if (method == "by_tracks"):
+            # By default put straps everywhere
+            bbox = None
+            weights = [1] # TODO this will change when implementing multiple power domains
+            layers = self.get_setting("par.generate_power_straps_options.by_tracks.strap_layers")
+            return self.specify_all_power_straps_by_tracks(layers, self.ground_net_name(), [self.power_net_name()], weights, bbox)
+        else:
+            raise NotImplementedError("Power strap generation method %s is not implemented" % method)
+
+    def specify_std_cell_power_straps(self, bbox: Optional[List[float]], nets: List[str]) -> List[str]:
+        layer_name = self.get_setting("technology.core.std_cell_rail_layer")
+        layer = self.get_stackup().get_metal(layer_name)
+        results = ["# Power strap definition for layer %s (rails):\n" % layer_name]
+        results.extend([
+            "reset_db -category add_stripes"
+        ])
+        tapcell = self.get_setting("technology.core.tap_cell_rail_reference")
+        options = [
+            "-pin_layer", layer_name,
+            "-layer", layer_name,
+            "-over_pins", "1",
+            "-master", "\"{}\"".format(tapcell),
+            "-block_ring_bottom_layer_limit", layer_name,
+            "-block_ring_top_layer_limit", layer_name,
+            "-pad_core_ring_bottom_layer_limit", layer_name,
+            "-pad_core_ring_top_layer_limit", layer_name,
+            "-direction", str(layer.direction),
+            "-width", "pin_width",
+            "-nets", "{ %s }" % " ".join(nets)
+        ]
+        if bbox is not None:
+            options.extend([
+                "-area", "{ %s }" % " ".join(map(lambda x: "%f" % x, bbox))
+            ])
+        results.append("add_stripes " + " ".join(options) + "\n")
+        return results
+
+    # This method is intended to be a low-level utility for adding straps on a metal layer
+    # You MUST call this method from the bottommost metal up
+    #
+    # layer_name: the metal layer
+    # bottom_via_layer_name: the lowest metal layer to via to
+    # blockage_spacing: Spacing between the end of a strap and the beginning of a macro or blockage
+    # pitch: The pitch between groups of power straps
+    # width: The width of each strap in a group
+    # spacing: The spacing between straps in a group
+    # offset: The offset to start the first group
+    # bbox: The (2N)-point bounding box of the area to generate straps (optional- default uses core area)
+    # nets: A list of the nets in a group
+    # add_pins: True if you want to add pins on this layer
+    def specify_power_straps(self, layer_name: str, bottom_via_layer_name: str, blockage_spacing: float, pitch: float, width: float, spacing: float, offset: float, bbox: Optional[List[float]], nets: List[str], add_pins: bool) -> List[str]:
+        # TODO check that this has been not been called after a higher-level metal and error if so
+        # TODO warn if the straps are off-pitch
+        results = ["# Power strap definition for layer %s:\n" % layer_name]
+        results.extend([
+            "reset_db -category add_stripes",
+            "set_db add_stripes_stacked_via_top_layer {}".format(layer_name),
+            "set_db add_stripes_stacked_via_bottom_layer {}".format(bottom_via_layer_name),
+            "set_db add_stripes_trim_antenna_back_to_shape {stripe}",
+            "set_db add_stripes_spacing_from_block {}".format(blockage_spacing)
+        ])
+        layer = self.get_stackup().get_metal(layer_name)
+        options = [
+            "-create_pins", ("1" if (add_pins) else "0"),
+            "-block_ring_bottom_layer_limit", layer_name,
+            "-block_ring_top_layer_limit", bottom_via_layer_name,
+            "-direction", str(layer.direction),
+            "-layer", layer_name,
+            "-nets", "{%s}" % " ".join(nets),
+            "-pad_core_ring_bottom_layer_limit", bottom_via_layer_name,
+            "-set_to_set_distance", "%f" % pitch,
+            "-spacing", "%f" % spacing,
+            "-switch_layer_over_obs", "0",
+            "-width", "%f" % width
+        ]
+        # Where to get the io-to-core offset from a bbox
+        index = 0
+        if layer.direction == RoutingDirection.Horizontal:
+            index = 1
+        elif layer.direction != RoutingDirection.Vertical:
+            raise ValueError("Cannot handle routing direction {d} for layer {l} when creating power straps".format(d=str(layer.direction), l=layer_name))
+
+        if bbox is not None:
+            options.extend([
+                "-area", "{ %s }" % " ".join(map(lambda x: "%f" % x, bbox)),
+                "-start", "%f" % (offset + bbox[index])
+            ])
+
+        else:
+            # Just put straps in the core area
+            options.extend([
+                "-area", "[get_db designs .core_bbox]",
+                "-start", "[expr [lindex [lindex [get_db designs .core_bbox] 0] %d] + %f]" % (index, offset)
+            ])
+        results.append("add_stripes " + " ".join(options) + "\n")
+        return results
+
+    def specify_power_straps_by_tracks(self, layer_name: str, bottom_via_layer: str, blockage_spacing: float, track_pitch: int, track_width: int, track_spacing: int, track_start: int, track_offset: float, bbox: Optional[List[float]], nets: List[str], add_pins: bool) -> List[str]:
+        # Note: even track_widths will be snapped to a half-track
+        layer = self.get_stackup().get_metal(layer_name)
+        pitch = track_pitch * layer.pitch
+        width = 0.0
+        spacing = 0.0
+        strap_offset = 0.0
+        if track_spacing == 0:
+            width, spacing, strap_start = layer.get_width_spacing_start_twwt(track_width)
+        else:
+            width, spacing, strap_start = layer.get_width_spacing_start_twt(track_width)
+            spacing = 2*spacing + track_spacing * layer.pitch - layer.min_width
+        offset = track_offset + track_start * layer.pitch + strap_start
+        return self.specify_power_straps(layer_name, bottom_via_layer, blockage_spacing, pitch, width, spacing, offset, bbox, nets, add_pins)
+
+    # TODO(johnwright) there's nothing innovus-specific about this, so these APIs should be moved to core hammer
+    # ucb-bar/hammer-cad-plugins#57
+    def specify_all_power_straps_by_tracks(self, layer_names: List[str], ground_net: str, power_nets: List[str], power_weights: List[int], bbox: Optional[List[float]]) -> List[str]:
+        assert len(power_nets) == len(power_weights)
+        if (len(power_nets) > 1):
+            raise NotImplementedError("FIXME: I don't yet support multiple power domains")
+        #TODO when implementing multiple power domains, this needs to change based on the floorplan
+        output = self.specify_std_cell_power_straps(bbox, [ground_net, power_nets[0]])
+        bottom_via_layer = self.get_setting("technology.core.std_cell_rail_layer")
+        last = self.get_stackup().get_metal(bottom_via_layer)
+        for layer_name in layer_names:
+            layer = self.get_stackup().get_metal(layer_name)
+            assert layer.index > last.index, "Must build power straps bottom-up"
+            if last.direction == layer.direction:
+                raise ValueError("Layers {a} and {b} run in the same direction, but have no power straps between them.".format(a=last.name, b=layer.name))
+
+            def get_metal_setting(key: str) -> str:
+                default = "par.generate_power_straps_options.by_tracks." + key
+                override = default + "_" + layer.name
+                try:
+                    return self.get_setting(override)
+                except KeyError:
+                    try:
+                        return self.get_setting(default)
+                    except KeyError:
+                        raise ValueError("No value set for key {}".format(default))
+
+            blockage_spacing = float(get_metal_setting("blockage_spacing"))
+            track_width = int(get_metal_setting("track_width"))
+            track_spacing = int(get_metal_setting("track_spacing"))
+            power_utilization = float(get_metal_setting("power_utilization"))
+
+            assert power_utilization > 0.0
+            assert power_utilization <= 1.0
+
+            # Calculate how many tracks we consume
+            # This strategy uses pairs of power and ground
+            consumed_tracks = 2 * track_width + track_spacing
+            track_pitch = consumed_tracks / power_utilization
+
+            track_start = 0 # TODO this matters for hierarchical coordination
+            offset = layer.offset # TODO this matters for hierarchical coordination
+            add_pins = False # TODO this should only be true for hierarchical cells
+            nets = [ground_net, power_nets[0]] # TODO this needs to change when implementing multiple power domains
+            output.extend(self.specify_power_straps_by_tracks(layer_name, last.name, blockage_spacing, track_pitch, track_width, track_spacing, track_start, offset, bbox, nets, add_pins))
+            last = layer
+        return output
+
+
+
+
 
 
 tool = Innovus
