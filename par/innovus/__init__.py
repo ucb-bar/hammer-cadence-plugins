@@ -444,9 +444,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         """
         output = []  # type: List[str]
 
-        power_straps_mode = str(self.get_setting("par.innovus.power_straps_mode"))
+        power_straps_mode = str(self.get_setting("par.power_straps_mode"))
         if power_straps_mode == "manual":
-            power_straps_script_contents = str(self.get_setting("par.innovus.power_straps_script_contents"))
+            power_straps_script_contents = str(self.get_setting("par.power_straps_script_contents"))
             # TODO(edwardw): proper source locators/SourceInfo
             output.append("# Power straps script manually specified from HAMMER")
             output.extend(power_straps_script_contents.split("\n"))
@@ -690,7 +690,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         spacing = 0.0
         strap_offset = 0.0
         if track_spacing == 0:
-            width, spacing, strap_start = layer.get_width_spacing_start_twwt(track_width)
+            width, spacing, strap_start = layer.get_width_spacing_start_twwt(track_width, force_even=True)
         else:
             width, spacing, strap_start = layer.get_width_spacing_start_twt(track_width)
             spacing = 2*spacing + track_spacing * layer.pitch - layer.min_width
