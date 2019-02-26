@@ -15,7 +15,6 @@ from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType
 from hammer_logging import HammerVLSILogging
 import hammer_tech
-from stackup import RoutingDirection
 
 
 # Notes: camelCase commands are the old syntax (deprecated)
@@ -585,9 +584,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         :return: Power straps TCL script.
         """
         method = self.get_setting("par.generate_power_straps_method")
-        if (method == "by_tracks"):
+        if method == "by_tracks":
             # By default put straps everywhere
-            bbox = None
+            bbox = None # type: Optional[List[float]]
             weights = [1] # TODO this will change when implementing multiple power domains
             layers = self.get_setting("par.generate_power_straps_options.by_tracks.strap_layers")
             return self.specify_all_power_straps_by_tracks(layers, self.ground_net_name(), [self.power_net_name()], weights, bbox)
@@ -595,6 +594,16 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             raise NotImplementedError("Power strap generation method %s is not implemented" % method)
 
     def specify_std_cell_power_straps(self, bbox: Optional[List[float]], nets: List[str]) -> List[str]:
+        """
+        Generate a list of TCL commands that build the low-level standard cell power strap rails.
+        This will use the -master option to create power straps based on technology.core.tap_cell_rail_reference.
+        The layer is set by technology.core.std_cell_rail_layer, which should be the highest metal layer in the std cell rails.
+
+        :param bbox: The optional (2N)-point bounding box of the area to generate straps. By default the entire core area is used.
+        :param nets: A list of power net names (e.g. ["VDD", "VSS"]). Currently only two are supported.
+        :return: A list of TCL commands that will generate power straps on rails.
+        """
+        assert len(nets) == 2, "FIXME, this function has only been tested to work with 2 nets (a power and a ground)"
         layer_name = self.get_setting("technology.core.std_cell_rail_layer")
         layer = self.get_stackup().get_metal(layer_name)
         results = ["# Power strap definition for layer %s (rails):\n" % layer_name]
@@ -622,20 +631,24 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         results.append("add_stripes " + " ".join(options) + "\n")
         return results
 
-    # This method is intended to be a low-level utility for adding straps on a metal layer
-    # You MUST call this method from the bottommost metal up
-    #
-    # layer_name: the metal layer
-    # bottom_via_layer_name: the lowest metal layer to via to
-    # blockage_spacing: Spacing between the end of a strap and the beginning of a macro or blockage
-    # pitch: The pitch between groups of power straps
-    # width: The width of each strap in a group
-    # spacing: The spacing between straps in a group
-    # offset: The offset to start the first group
-    # bbox: The (2N)-point bounding box of the area to generate straps (optional- default uses core area)
-    # nets: A list of the nets in a group
-    # add_pins: True if you want to add pins on this layer
     def specify_power_straps(self, layer_name: str, bottom_via_layer_name: str, blockage_spacing: float, pitch: float, width: float, spacing: float, offset: float, bbox: Optional[List[float]], nets: List[str], add_pins: bool) -> List[str]:
+        """
+        Generate a list of TCL commands that will create power straps on a given layer.
+        This is a low-level, cad-tool-specific API. It is designed to be called by higher-level methods, so calling this directly is not recommended.
+        This method assumes that power straps are built bottom-up, starting with standard cell rails.
+
+        :param layer_name: The layer name of the metal on which to create straps.
+        :param bottom_via_layer_name: The layer name of the lowest metal layer down to which to drop vias.
+        :param blockage_spacing: The minimum spacing between the end of a strap and the beginning of a macro or blockage.
+        :param pitch: The pitch between groups of power straps (i.e. from left edge of strap A to the next left edge of strap A).
+        :param width: The width of each strap in a group.
+        :param spacing: The spacing between straps in a group.
+        :param offset: The offset to start the first group.
+        :param bbox: The optional (2N)-point bounding box of the area to generate straps. By default the entire core area is used.
+        :param nets: A list of power nets to create (e.g. ["VDD", "VSS"], ["VDDA", "VSS", "VDDB"],  ... etc.).
+        :param add_pins: True if pins are desired on this layer; False otherwise.
+        :return: A list of TCL commands that will generate power straps.
+        """
         # TODO check that this has been not been called after a higher-level metal and error if so
         # TODO warn if the straps are off-pitch
         results = ["# Power strap definition for layer %s:\n" % layer_name]
@@ -662,9 +675,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         ]
         # Where to get the io-to-core offset from a bbox
         index = 0
-        if layer.direction == RoutingDirection.Horizontal:
+        if layer.direction == hammer_tech.RoutingDirection.Horizontal:
             index = 1
-        elif layer.direction != RoutingDirection.Vertical:
+        elif layer.direction != hammer_tech.RoutingDirection.Vertical:
             raise ValueError("Cannot handle routing direction {d} for layer {l} when creating power straps".format(d=str(layer.direction), l=layer_name))
 
         if bbox is not None:
@@ -683,6 +696,22 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return results
 
     def specify_power_straps_by_tracks(self, layer_name: str, bottom_via_layer: str, blockage_spacing: float, track_pitch: int, track_width: int, track_spacing: int, track_start: int, track_offset: float, bbox: Optional[List[float]], nets: List[str], add_pins: bool) -> List[str]:
+        """
+        Generate a list of TCL commands that will create power straps on a given layer by specifying the desired track consumption.
+        This method assumes that power straps are built bottom-up, starting with standard cell rails.
+
+        :param layer_name: The layer name of the metal on which to create straps.
+        :param bottom_via_layer_name: The layer name of the lowest metal layer down to which to drop vias.
+        :param blockage_spacing: The minimum spacing between the end of a strap and the beginning of a macro or blockage.
+        :param track_pitch: The integer pitch between groups of power straps (i.e. from left edge of strap A to the next left edge of strap A) in units of the routing pitch.
+        :param track_width: The desired number of routing tracks to consume by a single power strap.
+        :param track_spacing: The desired number of USABLE routing tracks between power straps. It is recommended to leave this at 0 except to fix DRC issues.
+        :param track_start: The index of the first track to start using for power straps relative to the bounding box.
+        :param bbox: The optional (2N)-point bounding box of the area to generate straps. By default the entire core area is used.
+        :param nets: A list of power nets to create (e.g. ["VDD", "VSS"], ["VDDA", "VSS", "VDDB"], ... etc.).
+        :param add_pins: True if pins are desired on this layer; False otherwise.
+        :return: A list of TCL commands that will generate power straps.
+        """
         # Note: even track_widths will be snapped to a half-track
         layer = self.get_stackup().get_metal(layer_name)
         pitch = track_pitch * layer.pitch
@@ -700,10 +729,26 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     # TODO(johnwright) there's nothing innovus-specific about this, so these APIs should be moved to core hammer
     # ucb-bar/hammer-cad-plugins#57
     def specify_all_power_straps_by_tracks(self, layer_names: List[str], ground_net: str, power_nets: List[str], power_weights: List[int], bbox: Optional[List[float]]) -> List[str]:
+        """
+        Generate a list of TCL commands that will create power straps on a given set of layers by specifying the desired per-track track consumption and utilization.
+        This will build standard cell power strap rails first. Layer-specific parameters are read from the hammer config:
+            - par.generate_power_straps_options.by_tracks.blockage_spacing
+            - par.generate_power_straps_options.by_tracks.track_width
+            - par.generate_power_straps_options.by_tracks.track_spacing
+            - par.generate_power_straps_options.by_tracks.power_utilization
+        These settings are all overridable by appending an underscore followed by the metal name (e.g. power_utilization_M3).
+
+        :param layer_names: The list of metal layer names on which to create straps.
+        :param ground_net: The name of the ground net in this design. Only 1 ground net is supported.
+        :param power_nets: A list of power nets to create (not ground). Currently only supports 1 (e.g. ["VDD"]).
+        :param power_weights: Specifies the power strap placement pattern for multiple-domain designs (e.g. ["VDDA", "VDDB"] with [2, 1] will produce 2 VDDA straps for ever 1 VDDB strap).
+        :param bbox: The optional (2N)-point bounding box of the area to generate straps. By default the entire core area is used.
+        :return: A list of TCL commands that will generate power straps.
+        """
         assert len(power_nets) == len(power_weights)
-        if (len(power_nets) > 1):
+        if len(power_nets) > 1:
             raise NotImplementedError("FIXME: I don't yet support multiple power domains")
-        #TODO when implementing multiple power domains, this needs to change based on the floorplan
+        # TODO when implementing multiple power domains, this needs to change based on the floorplan
         output = self.specify_std_cell_power_straps(bbox, [ground_net, power_nets[0]])
         bottom_via_layer = self.get_setting("technology.core.std_cell_rail_layer")
         last = self.get_stackup().get_metal(bottom_via_layer)
@@ -744,10 +789,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             output.extend(self.specify_power_straps_by_tracks(layer_name, last.name, blockage_spacing, track_pitch, track_width, track_spacing, track_start, offset, bbox, nets, add_pins))
             last = layer
         return output
-
-
-
-
 
 
 tool = Innovus
