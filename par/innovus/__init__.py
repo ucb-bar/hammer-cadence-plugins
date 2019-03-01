@@ -331,6 +331,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def output_innovus_lib_name(self) -> str:
         return "{top}_FINAL".format(top=self.top_module)
 
+    @property
+    def generated_scripts_dir(self) -> str:
+        return os.path.join(self.run_dir, "generated-scripts")
+
+    @property
+    def open_chip_script(self) -> str:
+        return os.path.join(self.generated_scripts_dir, "open_chip")
+
+    @property
+    def open_chip_tcl(self) -> str:
+        return self.open_chip_script + ".tcl"
+
     def write_design(self) -> bool:
         # Save the Innovus design.
         self.verbose_append("write_db {lib_name} -def -verilog".format(
@@ -344,24 +356,22 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.write_gds()
 
         # Make sure that generated-scripts exists.
-        generated_scripts_dir = os.path.join(self.run_dir, "generated-scripts")
-        os.makedirs(generated_scripts_dir, exist_ok=True)
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
         # Create open_chip script.
-        with open(os.path.join(generated_scripts_dir, "open_chip.tcl"), "w") as f:
+        with open(self.open_chip_tcl, "w") as f:
             f.write("""
         read_db {name}
                 """.format(name=self.output_innovus_lib_name))
 
-        with open(os.path.join(generated_scripts_dir, "open_chip"), "w") as f:
-            f.write("""
+        with open(self.open_chip_script, "w") as f:
+            f.write("""#!/bin/bash
         cd {run_dir}
         source enter
-        $INNOVUS_BIN -common_ui -win -files generated-scripts/open_chip.tcl
-                """.format(run_dir=self.run_dir))
-        self.run_executable([
-            "chmod", "+x", os.path.join(generated_scripts_dir, "open_chip")
-        ])
+        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
+                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
+        os.chmod(self.open_chip_script, 0o755)
+
         return True
 
     @property
