@@ -23,17 +23,6 @@ import hammer_tech
 
 class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
-    # TODO(johnwright): this should come from the IR
-    # ucb-bar/hammer-cad-plugins#30
-    def ground_net_name(self):
-        return "VSS"
-
-    # TODO(johnwright): this should come from the IR
-    # ucb-bar/hammer-cad-plugins#30
-    def power_net_name(self):
-        return "VDD"
-
-
     def fill_outputs(self) -> bool:
         if self.ran_write_ilm:
             # Check that the ILMs got written.
@@ -59,10 +48,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         self.output_gds = self.output_gds_filename
         self.output_netlist = self.output_netlist_filename
-        # TODO(johnwright): parametrize these
-        # ucb-bar/hammer-cad-plugins#30
-        self.power_nets = [self.power_net_name()]
-        self.ground_nets = [self.ground_net_name()]
         self.hcells_list = []
         return True
 
@@ -602,7 +587,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             bbox = None # type: Optional[List[float]]
             weights = [1] # TODO this will change when implementing multiple power domains
             layers = self.get_setting("par.generate_power_straps_options.by_tracks.strap_layers")
-            return self.specify_all_power_straps_by_tracks(layers, self.ground_net_name(), [self.power_net_name()], weights, bbox)
+            ground_net_names = list(map(lambda x: x.name, self.get_independent_ground_nets()))  # type: List[str]
+            power_net_names = list(map(lambda x: x.name, self.get_independent_power_nets()))  # type: List[str]
+            return self.specify_all_power_straps_by_tracks(layers, ground_net_names, power_net_names, weights, bbox)
         else:
             raise NotImplementedError("Power strap generation method %s is not implemented" % method)
 
