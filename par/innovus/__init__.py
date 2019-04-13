@@ -589,7 +589,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             layers = self.get_setting("par.generate_power_straps_options.by_tracks.strap_layers")
             ground_net_names = list(map(lambda x: x.name, self.get_independent_ground_nets()))  # type: List[str]
             power_net_names = list(map(lambda x: x.name, self.get_independent_power_nets()))  # type: List[str]
-            return self.specify_all_power_straps_by_tracks(layers, ground_net_names, power_net_names, weights, bbox)
+            return self.specify_all_power_straps_by_tracks(layers, ground_net_names[0], power_net_names, weights, bbox)
         else:
             raise NotImplementedError("Power strap generation method %s is not implemented" % method)
 
