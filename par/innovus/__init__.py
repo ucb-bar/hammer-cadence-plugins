@@ -7,6 +7,7 @@
 
 import shutil
 from typing import List, Dict, Optional, Callable, Tuple
+from itertools import product
 
 import os, errno
 
@@ -124,6 +125,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         steps = [
             self.init_design,
             self.floorplan_design,
+            self.place_bumps,
             self.place_tap_cells,
             self.power_straps,
             self.place_opt_design,
@@ -222,6 +224,50 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             f.write("\n".join(self.create_floorplan_tcl()))
         self.verbose_append("source -echo -verbose {}".format(floorplan_tcl))
         return True
+
+    def place_bumps(self) -> bool:
+        bumps = self.get_bumps()
+        if bumps is not None:
+            bump_array_width = (bumps.x - 1) * bumps.pitch  # type: float
+            bump_array_height = (bumps.y - 1) * bumps.pitch  # type: float
+            fp_consts = self.get_placement_constraints()
+            for const in fp_consts:
+                if const.type == PlacementConstraintType.TopLevel:
+                    fp_width = const.width
+                    fp_height = const.height
+            # Center bump array in the middle of floorplan
+            bump_offset_x = (fp_width - bump_array_width) / 2.0  # type: float
+            bump_offset_y = (fp_height - bump_array_height) / 2.0  # type: float
+            self.append("create_bump -cell {cell} -edge_spacing \"{off_x} {off_y} 0 0\" -location_type cell_center -name_format \"Bump_%c.%r\" -orient r0 -pitch \"{pitch} {pitch}\" -location \"{off_x} {off_y}\" -pattern_array \"{dim_x} {dim_y}\"".format(
+                cell = bumps.cell,
+                off_x = bump_offset_x, off_y = bump_offset_y,
+                pitch = bumps.pitch,
+                dim_x = bumps.x, dim_y = bumps.y))
+            unassigned_bumps = set(product(range(1, bumps.x+1), range(1, bumps.y+1)))  # type: Set[(int,int)]
+            power_ground_nets = list(map(lambda x: x.name, self.get_independent_power_nets() + self.get_independent_ground_nets()))
+            # TODO: Fix this once the stackup supports vias ucb-bar/hammer#354
+            block_layer = self.get_setting("vlsi.technology.bump_block_cut_layer")  # type: str
+            for bump in bumps.assignments:
+                if bump.name in power_ground_nets:
+                    self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bump.x, y=bump.y))
+                    self.append("assign_pg_bumps -selected -nets {n}".format(n=bump.name))
+                    self.append("deselect_bumps")
+                else:
+                    if not bump.no_connect:
+                        self.append("assign_signal_to_bump -bumps \"Bump_{x}.{y}\" -net {n}".format(x=bump.x, y=bump.y, n=bump.name))
+                unassigned_bumps.discard((bump.x, bump.y)) # Using discard to allow redundant mappings
+                self.append("create_route_blockage {layer_options} \"{llx} {lly} {urx} {ury}\"".format(
+                    layer_options="-layers {l} -rects".format(l=block_layer) if(self.version() >= self.version_number("181")) else "-cut_layers {l} -area".format(l=block_layer),
+                    llx = "[get_db bump:Bump_{x}.{y} .bbox.ll.x]".format(x=bump.x, y=bump.y),
+                    lly = "[get_db bump:Bump_{x}.{y} .bbox.ll.y]".format(x=bump.x, y=bump.y),
+                    urx = "[get_db bump:Bump_{x}.{y} .bbox.ur.x]".format(x=bump.x, y=bump.y),
+                    ury = "[get_db bump:Bump_{x}.{y} .bbox.ur.y]".format(x=bump.x, y=bump.y)))
+            for (bx, by) in unassigned_bumps:
+                self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bx, y=by))
+            self.append("delete_bumps -selected")
+            self.append("deselect_bumps")
+        return True
+
 
     def place_tap_cells(self) -> bool:
         # By default, do nothing
