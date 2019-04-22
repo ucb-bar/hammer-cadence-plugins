@@ -156,6 +156,16 @@ class Genus(HammerSynthesisTool, CadenceTool):
         verbose_append("set_db hdl_error_on_blackbox true")
         verbose_append("set_db max_cpus_per_server {}".format(self.get_setting("vlsi.core.max_threads")))
 
+        # Clock gating setup
+        if self.get_setting("synthesis.clock_gating_mode") == "auto":
+            verbose_append("set_db lp_clock_gating_infer_enable  true")
+            # Innovus will create instances named CLKGATE_foo, CLKGATE_bar, etc.
+            verbose_append("set_db lp_clock_gating_prefix  {CLKGATE}")
+            verbose_append("set_db lp_insert_clock_gating  true")
+            verbose_append("set_db lp_clock_gating_hierarchical true")
+            verbose_append("set_db lp_insert_clock_gating_incremental true")
+            verbose_append("set_db lp_clock_gating_register_aware true")
+
         # Set up libraries.
         # Read timing libraries.
         mmmc_path = os.path.join(self.run_dir, "mmmc.tcl")
