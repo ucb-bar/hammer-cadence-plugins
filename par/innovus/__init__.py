@@ -589,6 +589,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         y=constraint.y,
                         orientation=constraint.orientation if constraint.orientation is not None else "r0"
                     ))
+                    spacing = self.get_setting("par.blockage_spacing")
+                    if constraint.top_layer is not None:
+                        bot_layer = self.get_stackup().get_metal_by_index(1).name
+                        output.append("create_place_halo -insts {inst} -halo_deltas {{{s} {s} {s} {s}}} -snap_to_site".format(
+                            inst=new_path, s=spacing))
+                        output.append("create_route_halo -bottom_layer {b} -space {s} -top_layer {t} -inst {inst}".format(
+                            inst=new_path, b=bot_layer, t=constraint.top_layer, s=spacing))
                 elif constraint.type == PlacementConstraintType.Obstruction:
                     obs_types = get_or_else(constraint.obs_types, [])  # type: List[ObstructionType]
                     if ObstructionType.Place in obs_types:
