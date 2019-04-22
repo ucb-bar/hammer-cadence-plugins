@@ -425,6 +425,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         """Run time_design and write out the ILM."""
         self.verbose_append("time_design -post_route")
         self.verbose_append("time_design -post_route -hold")
+        self.verbose_append("check_process_antenna")
         self.verbose_append("write_lef_abstract -5.8 {top}ILM.lef".format(top=self.top_module))
         self.verbose_append("write_ilm -model_type all -to_dir {ilm_dir_name} -type_flex_ilm ilm".format(
             ilm_dir_name=self.ilm_dir_name))
