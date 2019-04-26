@@ -128,6 +128,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.place_bumps,
             self.place_tap_cells,
             self.power_straps,
+            self.place_pins,
             self.place_opt_design,
             self.clock_tree,
             self.route_design,
@@ -272,6 +273,34 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def place_tap_cells(self) -> bool:
         # By default, do nothing
         self.logger.warning("You have not overridden place_tap_cells. By default this step does nothing; you may have trouble with power strap creation later.")
+        return True
+
+    def place_pins(self) -> bool:
+        fp_consts = self.get_placement_constraints()
+        for const in fp_consts:
+            if const.type == PlacementConstraintType.TopLevel:
+                fp_llx = const.margins.left
+                fp_lly = const.margins.bottom
+                fp_urx = const.width - const.margins.right
+                fp_ury = const.height - const.margins.top
+        pin_assignments = self.get_pin_assignments()
+        self.verbose_append("set_db assign_pins_edit_in_batch true")
+        for pin in pin_assignments:
+            if pin.macro:
+                # First set promoted pins
+                self.verbose_append("set_promoted_macro_pin -pins {{ {p} }}".format(p=pin.pins))
+            else:
+                # TODO: Do we need pin blockages for our layers?
+                # Seems like we will only need special pin blockages if the vias are larger than the straps
+                self.verbose_append("edit_pin -pin {p} -hinst {m} -pattern fill_optimised -side {s} -layer {{ {l} }} -{end} {{ {ex} {ey} }} -{start} {{ {sx} {sy} }} -fixed_pin".format(
+                    p=pin.pins, m=self.top_module, s=pin.side, l=" ".join(pin.layers),
+                    ex=fp_llx if pin.side != "right" else fp_urx,
+                    ey=fp_lly if pin.side != "top" else fp_ury,
+                    sx=fp_urx if pin.side != "left" else fp_llx,
+                    sy=fp_ury if pin.side != "bottom" else fp_lly,
+                    end="end" if pin.side == "bottom" or pin.side == "right" else "start",
+                    start="start" if pin.side == "bottom" or pin.side == "right" else "end"))
+        self.verbose_append("set_db assign_pins_edit_in_batch false")
         return True
 
     def power_straps(self) -> bool:
