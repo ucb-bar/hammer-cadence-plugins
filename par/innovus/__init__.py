@@ -286,7 +286,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         pin_assignments = self.get_pin_assignments()
         self.verbose_append("set_db assign_pins_edit_in_batch true")
         for pin in pin_assignments:
-            if pin.macro:
+            if pin.preplaced:
                 # First set promoted pins
                 self.verbose_append("set_promoted_macro_pin -pins {{ {p} }}".format(p=pin.pins))
             else:
