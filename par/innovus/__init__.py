@@ -44,7 +44,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             # Write output_ilms.
             self.output_ilms = [
                 ILMStruct(dir=self.ilm_dir_name, data_dir=ilm_data_dir, module=self.top_module,
-                          lef=os.path.join(self.run_dir, "{top}ILM.lef".format(top=self.top_module)))
+                          lef=os.path.join(self.run_dir, "{top}ILM.lef".format(top=self.top_module)),
+                          gds=self.output_gds_filename,
+                          netlist=self.output_netlist_filename)
             ]
         else:
             self.output_ilms = []
@@ -365,6 +367,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         gds_files = self.technology.read_libs([
             hammer_tech.filters.gds_filter
         ], hammer_tech.HammerTechnologyUtils.to_plain_item)
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            ilm_gds = list(map(lambda ilm: ilm.gds, self.get_input_ilms()))
+            gds_files.extend(ilm_gds)
 
         # If we are not merging, then we want to use -output_macros.
         # output_macros means that Innovus should take any macros it has and
