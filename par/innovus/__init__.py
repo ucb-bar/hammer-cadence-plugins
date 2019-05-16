@@ -13,7 +13,7 @@ import os, errno
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
 from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
-    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins
+    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from hammer_tech import RoutingDirection, Metal
@@ -206,6 +206,17 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             for ilm in self.get_input_ilms():
                 # Assumes that the ILM was created by Innovus (or at least the file/folder structure).
                 verbose_append("read_ilm -cell {module} -directory {dir}".format(dir=ilm.dir, module=ilm.module))
+
+        # Emit init_power_nets and init_ground_nets in case CPF/UPF is not used
+        # commit_power_intent does not override power nets defined in "init_power_nets"
+        spec_mode = self.get_setting("vlsi.inputs.power_spec_mode")  # type: str
+        if spec_mode == "empty":
+            power_supplies = self.get_independent_power_nets()  # type: List[Supply]
+            power_nets = " ".join(map(lambda s: s.name, power_supplies))
+            ground_supplies = self.get_independent_ground_nets()  # type: List[Supply]
+            ground_nets = " ".join(map(lambda s: s.name, ground_supplies))
+            verbose_append("set_db init_power_nets {{{n}}}".format(n=power_nets))
+            verbose_append("set_db init_ground_nets {{{n}}}".format(n=ground_nets))
 
         # Run init_design to validate data and start the Cadence place-and-route workflow.
         verbose_append("init_design")
