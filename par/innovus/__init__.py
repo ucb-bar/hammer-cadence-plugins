@@ -327,7 +327,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         if len(self.get_clock_ports()) > 0:
             # Ignore clock tree when there are no clocks
             self.verbose_append("create_clock_tree_spec")
-            self.verbose_append("ccopt_design -hold -report_dir hammer_cts_debug -report_prefix hammer_cts")
+            if bool(self.get_setting("par.innovus.use_cco")):
+                # -hold is a secret flag for ccopt_design (undocumented anywhere)
+                self.verbose_append("ccopt_design -hold -report_dir hammer_cts_debug -report_prefix hammer_cts")
+            else:
+                self.verbose_append("clock_design")
         return True
 
     def route_design(self) -> bool:

@@ -25,3 +25,10 @@ par.innovus:
   # TODO(edwardw): Put in new floorplanning thing here when done.
   floorplan_mode: generate
   floorplan_script_contents: null
+
+  # Use "clock concurrent optimization" in clock tree synthesis.
+  # If true, uses the ccopt_design command which includes this feature
+  # by default in Innovus Common UI.
+  # Note that this requires an optional licence (enccco).
+  # type: bool
+  use_cco: true
