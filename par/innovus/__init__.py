@@ -264,12 +264,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             # TODO: Fix this once the stackup supports vias ucb-bar/hammer#354
             block_layer = self.get_setting("vlsi.technology.bump_block_cut_layer")  # type: str
             for bump in bumps.assignments:
-                if bump.name in power_ground_nets:
-                    self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bump.x, y=bump.y))
-                    self.append("assign_pg_bumps -selected -nets {n}".format(n=bump.name))
-                    self.append("deselect_bumps")
-                else:
-                    if not bump.no_connect:
+                if not bump.no_connect:
+                    if bump.name in power_ground_nets:
+                        self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bump.x, y=bump.y))
+                        self.append("assign_pg_bumps -selected -nets {n}".format(n=bump.name))
+                        self.append("deselect_bumps")
+                    else:
                         self.append("assign_signal_to_bump -bumps \"Bump_{x}.{y}\" -net {n}".format(x=bump.x, y=bump.y, n=bump.name))
                 unassigned_bumps.discard((bump.x, bump.y)) # Using discard to allow redundant mappings
                 self.append("create_route_blockage {layer_options} \"{llx} {lly} {urx} {ury}\"".format(
