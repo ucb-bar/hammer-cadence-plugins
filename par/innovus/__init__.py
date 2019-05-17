@@ -6,14 +6,14 @@
 #  See LICENSE for licence details.
 
 import shutil
-from typing import List, Dict, Optional, Callable, Tuple, Set, Any
+from typing import List, Dict, Optional, Callable, Tuple, Set, Any, cast
 from itertools import product
 
 import os, errno
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
 from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
-    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply
+    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from hammer_tech import RoutingDirection, Metal
@@ -278,21 +278,29 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     ury = "[get_db bump:Bump_{x}.{y} .bbox.ur.y]".format(x=bump.x, y=bump.y)))
         return True
 
-
     def place_tap_cells(self) -> bool:
         # By default, do nothing
-        self.logger.warning("You have not overridden place_tap_cells. By default this step does nothing; you may have trouble with power strap creation later.")
+        self.logger.warning(
+            "You have not overridden place_tap_cells. By default this step does nothing; you may have trouble with power strap creation later.")
         return True
 
     def place_pins(self) -> bool:
         fp_consts = self.get_placement_constraints()
+        topconst = None  # type: Optional[PlacementConstraint]
         for const in fp_consts:
             if const.type == PlacementConstraintType.TopLevel:
-                assert isinstance(const.margins, Margins), "Margins must be defined for the top level"
-                fp_llx = const.margins.left
-                fp_lly = const.margins.bottom
-                fp_urx = const.width - const.margins.right
-                fp_ury = const.height - const.margins.top
+                topconst = const
+        if topconst is None:
+            self.logger.fatal("Cannot find top-level constraints to place pins")
+            return False
+
+        const = cast(PlacementConstraint, topconst)
+        assert isinstance(const.margins, Margins), "Margins must be defined for the top level"
+        fp_llx = const.margins.left
+        fp_lly = const.margins.bottom
+        fp_urx = const.width - const.margins.right
+        fp_ury = const.height - const.margins.top
+
         pin_assignments = self.get_pin_assignments()
         self.verbose_append("set_db assign_pins_edit_in_batch true")
         for pin in pin_assignments:
@@ -302,15 +310,58 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             else:
                 # TODO: Do we need pin blockages for our layers?
                 # Seems like we will only need special pin blockages if the vias are larger than the straps
-                assert isinstance(pin.layers, list), "Pin layers must be defined"
-                self.verbose_append("edit_pin -pin {p} -hinst {m} -pattern fill_optimised -side {s} -layer {{ {l} }} -{end} {{ {ex} {ey} }} -{start} {{ {sx} {sy} }} -fixed_pin".format(
-                    p=pin.pins, m=self.top_module, s=pin.side, l=" ".join(pin.layers),
-                    ex=fp_llx if pin.side != "right" else fp_urx,
-                    ey=fp_lly if pin.side != "top" else fp_ury,
-                    sx=fp_urx if pin.side != "left" else fp_llx,
-                    sy=fp_ury if pin.side != "bottom" else fp_lly,
-                    end="end" if pin.side == "bottom" or pin.side == "right" else "start",
-                    start="start" if pin.side == "bottom" or pin.side == "right" else "end"))
+
+                cadence_side = None  # type: Optional[str]
+                if pin.side is not None:
+                    if pin.side == "internal":
+                        cadence_side = "inside"
+                    else:
+                        cadence_side = pin.side
+                side_arg = get_or_else(optional_map(cadence_side, lambda s: "-side " + s), "")
+
+                start_arg = ""
+                end_arg = ""
+                assign_arg = ""
+                pattern_arg = ""
+
+                if pin.location is None:
+                    start_arg = "-{start} {{ {sx} {sy} }}".format(
+                        start="start" if pin.side == "bottom" or pin.side == "right" else "end",
+                        sx=fp_urx if pin.side != "left" else fp_llx,
+                        sy=fp_ury if pin.side != "bottom" else fp_lly)
+
+                    end_arg = "-{end} {{ {ex} {ey} }}".format(
+                        end="end" if pin.side == "bottom" or pin.side == "right" else "start",
+                        ex=fp_llx if pin.side != "right" else fp_urx,
+                        ey=fp_lly if pin.side != "top" else fp_ury
+                    )
+                    pattern_arg = "-pattern fill_optimised"
+                else:
+                    assign_arg = "-assign {{ {x} {y} }}".format(x=pin.location[0], y=pin.location[1])
+
+                layers_arg = ""
+                if pin.layers is not None and len(pin.layers) > 0:
+                    layers_arg = "-layer {{ {} }}".format(" ".join(pin.layers))
+
+                width_arg = get_or_else(optional_map(pin.width, lambda f: "-pin_width {f}".format(f=f)), "")
+                depth_arg = get_or_else(optional_map(pin.depth, lambda f: "-pin_depth {f}".format(f=f)), "")
+
+                cmd = [
+                    "edit_pin",
+                    "-fixed_pin",
+                    "-pin", pin.pins,
+                    "-hinst", self.top_module,
+                    pattern_arg,
+                    layers_arg,
+                    side_arg,
+                    start_arg,
+                    end_arg,
+                    assign_arg,
+                    width_arg,
+                    depth_arg
+                ]
+
+                self.verbose_append(" ".join(cmd))
         self.verbose_append("set_db assign_pins_edit_in_batch false")
         return True
 
