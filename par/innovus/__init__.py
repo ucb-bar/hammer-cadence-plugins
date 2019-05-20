@@ -19,7 +19,6 @@ import hammer_tech
 from hammer_tech import RoutingDirection, Metal
 from decimal import Decimal
 
-
 # Notes: camelCase commands are the old syntax (deprecated)
 # snake_case commands are the new/common UI syntax.
 # This plugin should only use snake_case commands.
@@ -244,26 +243,26 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def place_bumps(self) -> bool:
         bumps = self.get_bumps()
         if bumps is not None:
-            bump_array_width = (bumps.x - 1) * bumps.pitch  # type: float
-            bump_array_height = (bumps.y - 1) * bumps.pitch  # type: float
+            bump_array_width = Decimal(str((bumps.x - 1) * bumps.pitch))
+            bump_array_height = Decimal(str((bumps.y - 1) * bumps.pitch))
             fp_consts = self.get_placement_constraints()
             for const in fp_consts:
                 if const.type == PlacementConstraintType.TopLevel:
                     fp_width = const.width
                     fp_height = const.height
             # Center bump array in the middle of floorplan
-            bump_offset_x = (fp_width - bump_array_width) / 2.0  # type: float
-            bump_offset_y = (fp_height - bump_array_height) / 2.0  # type: float
-            self.append("create_bump -cell {cell} -edge_spacing \"{off_x} {off_y} 0 0\" -location_type cell_center -name_format \"Bump_%c.%r\" -orient r0 -pitch \"{pitch} {pitch}\" -location \"{off_x} {off_y}\" -pattern_array \"{dim_x} {dim_y}\"".format(
-                cell = bumps.cell,
-                off_x = bump_offset_x, off_y = bump_offset_y,
-                pitch = bumps.pitch,
-                dim_x = bumps.x, dim_y = bumps.y))
-            unassigned_bumps = set(product(range(1, bumps.x+1), range(1, bumps.y+1)))  # type: Set[Tuple[int,int]]
+            bump_offset_x = (Decimal(str(fp_width)) - bump_array_width) / 2
+            bump_offset_y = (Decimal(str(fp_height)) - bump_array_height) / 2
             power_ground_nets = list(map(lambda x: x.name, self.get_independent_power_nets() + self.get_independent_ground_nets()))
             # TODO: Fix this once the stackup supports vias ucb-bar/hammer#354
             block_layer = self.get_setting("vlsi.technology.bump_block_cut_layer")  # type: str
             for bump in bumps.assignments:
+                self.append("create_bump -cell {cell} -location_type cell_center -name_format \"Bump_{c}.{r}\" -orient r0 -location \"{x} {y}\"".format(
+                    cell = bump.custom_cell if bump.custom_cell is not None else bumps.cell,
+                    c = bump.x,
+                    r = bump.y,
+                    x = bump_offset_x + Decimal(str(bump.x - 1)) * Decimal(str(bumps.pitch)),
+                    y = bump_offset_y + Decimal(str(bump.y - 1)) * Decimal(str(bumps.pitch))))
                 if not bump.no_connect:
                     if bump.name in power_ground_nets:
                         self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bump.x, y=bump.y))
@@ -271,17 +270,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         self.append("deselect_bumps")
                     else:
                         self.append("assign_signal_to_bump -bumps \"Bump_{x}.{y}\" -net {n}".format(x=bump.x, y=bump.y, n=bump.name))
-                unassigned_bumps.discard((bump.x, bump.y)) # Using discard to allow redundant mappings
                 self.append("create_route_blockage {layer_options} \"{llx} {lly} {urx} {ury}\"".format(
                     layer_options="-layers {{{l}}} -rects".format(l=block_layer) if(self.version() >= self.version_number("181")) else "-cut_layers {{{l}}} -area".format(l=block_layer),
                     llx = "[get_db bump:Bump_{x}.{y} .bbox.ll.x]".format(x=bump.x, y=bump.y),
                     lly = "[get_db bump:Bump_{x}.{y} .bbox.ll.y]".format(x=bump.x, y=bump.y),
                     urx = "[get_db bump:Bump_{x}.{y} .bbox.ur.x]".format(x=bump.x, y=bump.y),
                     ury = "[get_db bump:Bump_{x}.{y} .bbox.ur.y]".format(x=bump.x, y=bump.y)))
-            for (bx, by) in unassigned_bumps:
-                self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bx, y=by))
-            self.append("delete_bumps -selected")
-            self.append("deselect_bumps")
         return True
 
 
