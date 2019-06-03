@@ -582,8 +582,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return output
 
     @staticmethod
-    def generate_chip_size_constraint(width: float, height: float, left: float, bottom: float, right: float,
-                                      top: float, site: str) -> str:
+    def generate_chip_size_constraint(width: Decimal, height: Decimal, left: Decimal, bottom: Decimal, right: Decimal,
+                                      top: Decimal, site: str) -> str:
         """
         Given chip width/height and margins, generate an Innovus TCL command to create the floorplan.
         Also requires a technology specific name for the core site
@@ -619,8 +619,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # TODO snap this to a core site
         chip_size_constraint = self.generate_chip_size_constraint(
             site=self.technology.get_placement_site().name,
-            width=1000.0, height=1000.0,
-            left=100, bottom=100, right=100, top=100
+            width=Decimal("1000"), height=Decimal("1000"),
+            left=Decimal("100"), bottom=Decimal("100"),
+            right=Decimal("100"), top=Decimal("100")
         )
 
         floorplan_constraints = self.get_placement_constraints()
