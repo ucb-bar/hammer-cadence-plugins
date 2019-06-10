@@ -408,13 +408,16 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Don't use virtual connects (using colon, e.g. VSS:) because they mess up LVS
         self.verbose_append("set_db write_stream_virtual_connection false")
 
+        # Connect power nets that are tied together
+        for pwr_gnd_net in (self.get_all_power_nets() + self.get_all_ground_nets()):
+            if pwr_gnd_net.tie is not None:
+                self.verbose_append("connect_global_net {tie} -type net -net_base_name {net}".format(tie=pwr_gnd_net.tie, net=pwr_gnd_net.name))
+
         # Output the Verilog netlist for the design and include physical cells (-phys) like decaps and fill
-        # TODO(johnwright): We may want to include a -exclude_insts_of_cells [...] here
-        # We may also want to include connect_global_net commands to tie body pins, although that feels like
-        # a separate logical step
-        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -phys -flat".format(
+        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -phys -flat -exclude_insts_of_cells {{ {pcells} }} ".format(
             netlist=self.output_netlist_filename,
-            top=self.top_module
+            top=self.top_module,
+            pcells=" ".join(self.get_physical_only_cells())
         ))
         return True
 
