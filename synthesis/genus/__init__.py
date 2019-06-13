@@ -84,13 +84,6 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return self.run_genus()
 
     @property
-    def output(self) -> List[str]:
-        """
-        Buffered output to be put into syn.tcl.
-        """
-        return self.attr_getter("_output", [])
-
-    @property
     def mapped_v_path(self) -> str:
         return os.path.join(self.run_dir, "{}.mapped.v".format(self.top_module))
 
@@ -110,12 +103,6 @@ class Genus(HammerSynthesisTool, CadenceTool):
     @ran_write_outputs.setter
     def ran_write_outputs(self, val: bool) -> None:
         self.attr_setter("_ran_write_outputs", val)
-
-    # Python doesn't have Scala's nice currying syntax (e.g. val newfunc = func(_, fixed_arg))
-    def verbose_append(self, cmd: str) -> None:
-        self.verbose_tcl_append(cmd, self.output)
-    def append(self, cmd: str) -> None:
-        self.tcl_append(cmd, self.output)
 
     def remove_hierarchical_submodules_from_file(self, path: str) -> str:
         """

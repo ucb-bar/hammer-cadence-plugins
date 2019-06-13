@@ -111,19 +111,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return self.run_innovus()
 
     @property
-    def output(self) -> List[str]:
-        """
-        Buffered output to be put into par.tcl.
-        """
-        return self.attr_getter("_output", [])
-
-    # Python doesn't have Scala's nice currying syntax (e.g. val newfunc = func(_, fixed_arg))
-    def verbose_append(self, cmd: str) -> None:
-        self.verbose_tcl_append(cmd, self.output)
-    def append(self, cmd: str) -> None:
-        self.tcl_append(cmd, self.output)
-
-    @property
     def steps(self) -> List[HammerToolStep]:
         steps = [
             self.init_design,
