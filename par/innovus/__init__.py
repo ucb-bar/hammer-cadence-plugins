@@ -651,6 +651,15 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     top=margins.top
                 )
             else:
+                orientation = constraint.orientation if constraint.orientation is not None else "r0"
+                if constraint.create_physical:
+                    output.append("create_inst -cell {cell} -inst {inst} -location {{{x} {y}}} -orient {orientation} -physical -status fixed".format(
+                        cell=constraint.master,
+                        inst=new_path,
+                        x=constraint.x,
+                        y=constraint.y,
+                        orientation=orientation
+                    ))
                 if constraint.type == PlacementConstraintType.Dummy:
                     pass
                 elif constraint.type == PlacementConstraintType.Placement:
@@ -661,12 +670,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         y1=constraint.y,
                         y2=constraint.y + constraint.height
                     ))
-                elif constraint.type == PlacementConstraintType.HardMacro or constraint.type == PlacementConstraintType.Hierarchical:
-                    output.append("place_inst {inst} {x} {y} {orientation}".format(
+                elif constraint.type in [PlacementConstraintType.HardMacro, PlacementConstraintType.Hierarchical]:
+                    output.append("place_inst {inst} {x} {y} {orientation}{fixed}".format(
                         inst=new_path,
                         x=constraint.x,
                         y=constraint.y,
-                        orientation=constraint.orientation if constraint.orientation is not None else "r0"
+                        orientation=orientation,
+                        fixed=" -fixed" if constraint.create_physical else ""
                     ))
                     spacing = self.get_setting("par.blockage_spacing")
                     if constraint.top_layer is not None:
