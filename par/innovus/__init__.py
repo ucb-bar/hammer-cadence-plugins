@@ -233,10 +233,14 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             bump_array_width = Decimal(str((bumps.x - 1) * bumps.pitch))
             bump_array_height = Decimal(str((bumps.y - 1) * bumps.pitch))
             fp_consts = self.get_placement_constraints()
+            fp_width = Decimal(0)
+            fp_height = Decimal(0)
             for const in fp_consts:
                 if const.type == PlacementConstraintType.TopLevel:
                     fp_width = const.width
                     fp_height = const.height
+            if fp_width == 0 or fp_height == 0:
+                raise ValueError("Floorplan does not specify a TopLevel constraint or it has no dimensions")
             # Center bump array in the middle of floorplan
             bump_offset_x = (Decimal(str(fp_width)) - bump_array_width) / 2
             bump_offset_y = (Decimal(str(fp_height)) - bump_array_height) / 2
