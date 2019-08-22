@@ -23,6 +23,7 @@ foreach layer [get_db layers] {
             set direction "redistribution"
         }
         set min_width [get_db $layer .min_width]
+        set max_width [get_db $layer .max_width]
         set min_spacing [get_db $layer .min_spacing]
         # Note: there is a pitch field in the database, but it's for same-colored metals
         #       We are writing this to be color-agnostic, so we'll assume that the pitch is the
@@ -41,6 +42,7 @@ foreach layer [get_db layers] {
         append output "\"index\": $index, "
         append output "\"direction\": \"$direction\", "
         append output "\"min_width\": $min_width, "
+        append output "\"max_width\": $max_width, "
         append output "\"pitch\": $pitch, "
         append output "\"offset\": $offset, "
         append output {"power_strap_widths_and_spacings": [}
