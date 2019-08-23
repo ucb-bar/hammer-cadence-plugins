@@ -21,6 +21,7 @@ par.innovus:
   # - blank - Specify no floorplanning constraints (likely won't work)
   # - manual - Specify the contents of a manual SDC floorplanning script to use in floorplan_script_contents.
   # - generate - Generate a floorplan from the hammer-vlsi config/IR.
+  # - auto - Use Innovus's `plan_design` command to auto-generate a floorplan. Will have poor, but sane results
   #   If you specify this, you must also specify the floorplanning_script config below. The floorplanning_script config will be ignored in other modes.
   # TODO(edwardw): Put in new floorplanning thing here when done.
   floorplan_mode: generate

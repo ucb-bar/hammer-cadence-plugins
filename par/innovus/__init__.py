@@ -157,6 +157,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Generic settings
         verbose_append("set_db design_process_node {}".format(self.get_setting("vlsi.core.node")))
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
+        # Perform common path pessimism removal in setup and hold mode
+        verbose_append("set_db timing_analysis_cppr both")
+        # Use OCV mode for timing analysis by default
+        verbose_append("set_db timing_analysis_type ocv")
+
 
         # Read LEF layouts.
         lef_files = self.technology.read_libs([
@@ -568,6 +573,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             output.extend(floorplan_script_contents.split("\n"))
         elif floorplan_mode == "generate":
             output.extend(self.generate_floorplan_tcl())
+        elif floorplan_mode == "auto":
+            output.append("# Using auto-generated floorplan")
+            output.append("plan_design")
         else:
             if floorplan_mode != "blank":
                 self.logger.error("Invalid floorplan_mode {mode}. Using blank floorplan.".format(mode=floorplan_mode))
