@@ -16,6 +16,7 @@ import hammer_tech
 from typing import Dict, List, Any, Optional
 
 import os
+import json
 
 
 class Genus(HammerSynthesisTool, CadenceTool):
@@ -39,6 +40,28 @@ class Genus(HammerSynthesisTool, CadenceTool):
         if not os.path.isfile(self.mapped_sdc_path):
             raise ValueError("Output SDC %s not found" % (self.mapped_sdc_path)) # better error?
         self.output_sdc = self.mapped_sdc_path
+
+        if not os.path.isfile(self.mapped_all_regs_path):
+            raise ValueError("Output find_regs.json %s not found" % (self.mapped_all_regs_path))
+
+        with open(self.mapped_all_regs_path, "r") as f:
+            j = json.load(f)
+            self.output_seq_cells = j["seq_cells"]
+            reg_paths = j["reg_paths"]
+            for i in range(len(reg_paths)):
+                split = reg_paths[i].split("/")
+                if split[-2][-1] == "]":
+                    split[-2] = "\\" + split[-2]
+                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
+                else:
+                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
+            self.output_all_regs = reg_paths
+
+        if not os.path.isfile(self.output_sdf_path):
+            raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+
+        self.sdf_file = self.output_sdf_path
+
         return True
 
     @property
@@ -51,6 +74,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
         outputs = dict(super().export_config_outputs())
         # TODO(edwardw): find a "safer" way of passing around these settings keys.
         outputs["synthesis.outputs.sdc"] = self.output_sdc
+        outputs["synthesis.outputs.seq_cells"] = self.output_seq_cells
+        outputs["synthesis.outputs.all_regs"] = self.output_all_regs
+        outputs["synthesis.outputs.sdf_file"] = self.output_sdf_path
         return outputs
 
     def tool_config_prefix(self) -> str:
@@ -62,6 +88,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
             self.init_environment,
             self.syn_generic,
             self.syn_map,
+            self.write_regs,
             self.generate_reports,
             self.write_outputs
         ])
@@ -94,6 +121,14 @@ class Genus(HammerSynthesisTool, CadenceTool):
     @property
     def mapped_sdc_path(self) -> str:
         return os.path.join(self.run_dir, "{}.mapped.sdc".format(self.top_module))
+
+    @property
+    def mapped_all_regs_path(self) -> str:
+        return os.path.join(self.run_dir, "find_regs.json")
+
+    @property
+    def output_sdf_path(self) -> str:
+        return os.path.join(self.run_dir, "{top}.mapped.sdf".format(top=self.top_module))
 
     @property
     def ran_write_outputs(self) -> bool:
@@ -235,6 +270,51 @@ class Genus(HammerSynthesisTool, CadenceTool):
         self.verbose_append("write_reports -directory reports -tag final")
         return True
 
+    def write_regs(self) -> bool:
+        """write regs info to be read in for simulation register forcing"""
+        self.append('''
+        set write_regs_ir "./find_regs.json"
+        set write_regs_ir [open $write_regs_ir "w"]
+        puts $write_regs_ir "\{"
+        puts $write_regs_ir {   "seq_cells" : [}
+
+        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
+
+        set len [llength $refs]
+
+        for {set i 0} {$i < [llength $refs]} {incr i} {
+            if {$i == $len - 1} {
+                puts $write_regs_ir "    \\"[lindex $refs $i]\\""
+            } else {
+                puts $write_regs_ir "    \\"[lindex $refs $i]\\","
+            }
+        }
+
+        puts $write_regs_ir "  \],"
+        puts $write_regs_ir {   "reg_paths" : [}
+
+        set regs [get_db [all_registers -edge_triggered -output_pins] .name]
+
+        set len [llength $regs]
+
+        for {set i 0} {$i < [llength $regs]} {incr i} {
+            #regsub -all {/} [lindex $regs $i] . myreg
+            set myreg [lindex $regs $i]
+            if {$i == $len - 1} {
+                puts $write_regs_ir "    \\"$myreg\\""
+            } else {
+                puts $write_regs_ir "    \\"$myreg\\","
+            }
+        }
+
+        puts $write_regs_ir "  \]"
+
+        puts $write_regs_ir "\}"
+        close $write_regs_ir
+        ''')
+
+        return True
+
     def write_outputs(self) -> bool:
         verbose_append = self.verbose_append
         top = self.top_module
@@ -254,6 +334,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
         is_hier = self.hierarchical_mode != HierarchicalMode.Leaf # self.hierarchical_mode != HierarchicalMode.Flat
         verbose_append("write_design -innovus {hier_flag} -gzip_files {top}".format(
             hier_flag="-hierarchical" if is_hier else "", top=top))
+
+        verbose_append("write_sdf > {run_dir}/{top}.mapped.sdf".format(run_dir=self.run_dir, top=top))
 
         self.ran_write_outputs = True
 

@@ -9,7 +9,9 @@ import shutil
 from typing import List, Dict, Optional, Callable, Tuple, Set, Any, cast
 from itertools import product
 
-import os, errno
+import os
+import errno
+import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
 from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
@@ -24,6 +26,14 @@ from decimal import Decimal
 # This plugin should only use snake_case commands.
 
 class Innovus(HammerPlaceAndRouteTool, CadenceTool):
+
+    def export_config_outputs(self) -> Dict[str, Any]:
+        outputs = dict(super().export_config_outputs())
+        # TODO(edwardw): find a "safer" way of passing around these settings keys.
+        outputs["par.outputs.seq_cells"] = self.output_seq_cells
+        outputs["par.outputs.all_regs"] = self.output_all_regs
+        outputs["par.outputs.sdf_file"] = self.output_sdf_path
+        return outputs
 
     def fill_outputs(self) -> bool:
         if self.ran_write_ilm:
@@ -53,6 +63,26 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.output_gds = self.output_gds_filename
         self.output_netlist = self.output_netlist_filename
         self.hcells_list = []
+
+        if not os.path.isfile(self.all_regs_path):
+            raise ValueError("Output find_regs.json %s not found" % (self.all_regs_path))
+
+        with open(self.all_regs_path, "r") as f:
+            j = json.load(f)
+            self.output_seq_cells = j["seq_cells"]
+            reg_paths = j["reg_paths"]
+            for i in range(len(reg_paths)):
+                split = reg_paths[i].split("/")
+                if split[-2][-1] == "]":
+                    split[-2] = "\\" + split[-2]
+                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
+                else:
+                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
+            self.output_all_regs = reg_paths
+
+        if not os.path.isfile(self.output_sdf_path):
+            raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+        self.sdf_file = self.output_sdf_path
         return True
 
     @property
@@ -62,6 +92,14 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     @property
     def output_netlist_filename(self) -> str:
         return os.path.join(self.run_dir, "{top}.lvs.v".format(top=self.top_module))
+
+    @property
+    def all_regs_path(self) -> str:
+        return os.path.join(self.run_dir, "find_regs.json")
+
+    @property
+    def output_sdf_path(self) -> str:
+        return os.path.join(self.run_dir, "{top}.par.sdf".format(top=self.top_module))
 
     @property
     def env_vars(self) -> Dict[str, str]:
@@ -125,6 +163,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.opt_design
         ]
         write_design_step = [
+            self.write_regs,
             self.write_design
         ]  # type: List[Callable[[], bool]]
         if self.hierarchical_mode == HierarchicalMode.Flat:
@@ -459,6 +498,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         ))
         return True
 
+    def write_sdf(self) -> bool:
+
+        # Output the Standard Delay Format File for use in timing annotated gate level simulations
+        self.verbose_append("write_sdf > {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
+
+        return True
+
     @property
     def output_innovus_lib_name(self) -> str:
         return "{top}_FINAL".format(top=self.top_module)
@@ -475,6 +521,51 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def open_chip_tcl(self) -> str:
         return self.open_chip_script + ".tcl"
 
+    def write_regs(self) -> bool:
+        """write regs info to be read in for simulation register forcing"""
+        self.append('''
+        set write_regs_ir "./find_regs.json"
+        set write_regs_ir [open $write_regs_ir "w"]
+        puts $write_regs_ir "\{"
+        puts $write_regs_ir {   "seq_cells" : [}
+
+        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
+
+        set len [llength $refs]
+
+        for {set i 0} {$i < [llength $refs]} {incr i} {
+            if {$i == $len - 1} {
+                puts $write_regs_ir "    \\"[lindex $refs $i]\\""
+            } else {
+                puts $write_regs_ir "    \\"[lindex $refs $i]\\","
+            }
+        }
+
+        puts $write_regs_ir "  \],"
+        puts $write_regs_ir {   "reg_paths" : [}
+
+        set regs [get_db [all_registers -edge_triggered -output_pins] .name]
+
+        set len [llength $regs]
+
+        for {set i 0} {$i < [llength $regs]} {incr i} {
+            #regsub -all {/} [lindex $regs $i] . myreg
+            set myreg [lindex $regs $i]
+            if {$i == $len - 1} {
+                puts $write_regs_ir "    \\"$myreg\\""
+            } else {
+                puts $write_regs_ir "    \\"$myreg\\","
+            }
+        }
+
+        puts $write_regs_ir "  \]"
+
+        puts $write_regs_ir "\}"
+        close $write_regs_ir
+        ''')
+
+        return True
+
     def write_design(self) -> bool:
         # Save the Innovus design.
         self.verbose_append("write_db {lib_name} -def -verilog".format(
@@ -486,6 +577,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # GDS streamout.
         self.write_gds()
+
+        # Write SDF
+        self.write_sdf()
 
         # Make sure that generated-scripts exists.
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
