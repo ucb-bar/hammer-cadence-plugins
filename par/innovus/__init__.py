@@ -501,7 +501,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def write_sdf(self) -> bool:
 
         # Output the Standard Delay Format File for use in timing annotated gate level simulations
-        self.verbose_append("write_sdf > {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
+        self.verbose_append("write_sdf {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
 
         return True
 
