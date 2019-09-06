@@ -490,8 +490,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             " ".join(gds_files)
         )
 
-        # TODO: explanation for why we chose this unit parameter
-        self.verbose_append("write_stream -mode ALL -unit 1000 {map_file} {merge_options} {gds}".format(
+        self.verbose_append("write_stream -mode ALL {map_file} {merge_options} {gds}".format(
             map_file=map_file,
             merge_options=merge_options,
             gds=self.output_gds_filename
