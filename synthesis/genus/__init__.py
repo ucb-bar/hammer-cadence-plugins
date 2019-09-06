@@ -244,11 +244,11 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # TODO: is there a way to track instance paths through the synthesis process?
         verbose_append("set_db root: .auto_ungroup none")
 
-        # Set units to pF and ns.
+        # Set units to pF and technology time unit.
         # Must be done after elaboration.
         verbose_append("set_units -capacitance 1.0pF")
         verbose_append("set_load_unit -picofarads 1")
-        verbose_append("set_units -time 1.0ns")
+        verbose_append("set_units -time 1.0{}".format(self.get_time_unit()))
 
         # Set "don't use" cells.
         for l in self.generate_dont_use_commands():
