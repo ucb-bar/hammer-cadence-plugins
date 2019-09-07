@@ -15,6 +15,9 @@ import hammer_tech
 
 from typing import Dict, List, Any, Optional
 
+import specialcells
+from specialcells import CellType, SpecialCell
+
 import os
 import json
 
@@ -88,6 +91,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
             self.init_environment,
             self.syn_generic,
             self.syn_map,
+            self.add_tieoffs,
             self.write_regs,
             self.generate_reports,
             self.write_outputs
@@ -262,6 +266,18 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def syn_map(self) -> bool:
         self.verbose_append("syn_map")
+        return True
+
+    def add_tieoffs(self) -> bool:
+        tiecells = self.technology.get_special_cell_by_type(CellType.TieCell)[0].name
+        if len(tiecells) != 2:
+            self.logger.warning(
+                "The technology plugin 'special cells: tiecells' field is malformed or does not exist. It should specify one hi cell first, then one lo tiecell. No tiecells will be added. You can override this with a tiecell hook if you do not want to specify special cells in the technology plugin.")
+        else:
+            hi_tie = str(tiecells[0])
+            lo_tie = str(tiecells[1])
+            self.verbose_append("set_db use_tiehilo_for_const duplicate")
+            self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=hi_tie, LO_TIEOFF=lo_tie))
         return True
 
     def generate_reports(self) -> bool:

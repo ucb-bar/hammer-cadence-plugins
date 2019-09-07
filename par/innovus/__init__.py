@@ -19,6 +19,8 @@ from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from hammer_tech import RoutingDirection, Metal
+import specialcells
+from specialcells import CellType, SpecialCell
 from decimal import Decimal
 
 # Notes: camelCase commands are the old syntax (deprecated)
@@ -159,6 +161,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.place_pins,
             self.place_opt_design,
             self.clock_tree,
+            self.add_fillers,
             self.route_design,
             self.opt_design
         ]
@@ -314,9 +317,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def place_tap_cells(self) -> bool:
-        # By default, do nothing
-        self.logger.warning(
-            "You have not overridden place_tap_cells. By default this step does nothing; you may have trouble with power strap creation later.")
+        # NOTE: This is meant to be an example only using the hammer demo asap7 technology since the desired behavior vary significantly between
+        # technologies. When using a technology other than asap7, this step will do nothing and a hook with custom TCL should be added to
+        # implement the correct action.
+
+        if self.get_setting("vlsi.core.technology") == "asap7":
+            self.append('''
+set_db add_well_taps_cell TAPCELL_ASAP7_75t_L
+add_well_taps -cell_interval 50 -in_row_offset 10.564
+        ''')
+        else:
+            self.logger.warning(
+                "You have not overridden place_tap_cells. By default this step does nothing; you may have trouble with power strap creation later.")
         return True
 
     def place_pins(self) -> bool:
@@ -424,6 +436,21 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             else:
                 self.verbose_append("clock_design")
         return True
+
+    def add_fillers(self) -> bool:
+        """add filler cells"""
+        stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)[0].name
+        if stdfiller == []:
+            self.logger.warning(
+                "The technology plugin 'special cells: tiecells' field is malformed or does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with a add_fillers hook if you do not want to specify filler cells in the technology plugin.")
+        else:
+            filler_str = ""
+            for cell in stdfiller:
+                filler_str += str(cell) + ' '
+            self.append("set_db add_fillers_cells \"{FILLER}\"".format(FILLER=filler_str))
+            self.append("add_fillers")
+        return True
+
 
     def route_design(self) -> bool:
         """Route the design."""
