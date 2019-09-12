@@ -200,6 +200,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         verbose_append("set_db timing_analysis_cppr both")
         # Use OCV mode for timing analysis by default
         verbose_append("set_db timing_analysis_type ocv")
+        # Match SDC time units to timing libraries
+        verbose_append("set_library_unit -time {}".format(self.technology.config.time_unit.replace(" ", "")))
 
 
         # Read LEF layouts.
