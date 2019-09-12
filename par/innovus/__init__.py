@@ -321,14 +321,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # technologies. When using a technology other than asap7, this step will do nothing and a hook with custom TCL should be added to
         # implement the correct action.
 
-        if self.get_setting("vlsi.core.technology") == "asap7":
-            self.append('''
+        self.append('''
 set_db add_well_taps_cell TAPCELL_ASAP7_75t_L
 add_well_taps -cell_interval 50 -in_row_offset 10.564
         ''')
-        else:
-            self.logger.warning(
-                "You have not overridden place_tap_cells. By default this step does nothing; you may have trouble with power strap creation later.")
+        self.logger.warning(
+            "You have not overridden place_tap_cells. By default this step adds a simple set of tapcells based on ASAP7; you will have trouble with power strap creation later if you are targeting a different technology.")
         return True
 
     def place_pins(self) -> bool:
@@ -442,7 +440,7 @@ add_well_taps -cell_interval 50 -in_row_offset 10.564
         stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)[0].name
         if stdfiller == []:
             self.logger.warning(
-                "The technology plugin 'special cells: tiecells' field is malformed or does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with a add_fillers hook if you do not want to specify filler cells in the technology plugin.")
+                "The technology plugin 'special cells: stdfiller' field does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with a add_fillers hook if you do not want to specify filler cells in the technology plugin.")
         else:
             filler_str = ""
             for cell in stdfiller:
