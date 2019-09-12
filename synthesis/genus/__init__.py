@@ -248,7 +248,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # Must be done after elaboration.
         verbose_append("set_units -capacitance 1.0pF")
         verbose_append("set_load_unit -picofarads 1")
-        verbose_append("set_units -time 1.0{}".format(self.get_time_unit()))
+        verbose_append("set_units -time 1.0{}".format(self.get_time_unit().value_prefix + self.get_time_unit().unit))
 
         # Set "don't use" cells.
         for l in self.generate_dont_use_commands():
