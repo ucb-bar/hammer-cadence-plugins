@@ -317,16 +317,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def place_tap_cells(self) -> bool:
-        # NOTE: This is meant to be an example only using the hammer demo asap7 technology since the desired behavior vary significantly between
-        # technologies. When using a technology other than asap7, this step will do nothing and a hook with custom TCL should be added to
-        # implement the correct action.
-
-        self.append('''
-set_db add_well_taps_cell TAPCELL_ASAP7_75t_L
-add_well_taps -cell_interval 50 -in_row_offset 10.564
-        ''')
-        self.logger.warning(
-            "You have not overridden place_tap_cells. By default this step adds a simple set of tapcells based on ASAP7; you will have trouble with power strap creation later if you are targeting a different technology.")
+        # This should be overridden by a tech specific hook
+        tap_cell = self.technology.get_special_cell_by_type(CellType.TapCell)[0].name[0]
+        try:
+            interval = self.get_setting("vlsi.technology.tap_cell_interval")
+            offset = self.get_setting("vlsi.technology.tap_cell_offset")
+            self.append("set_db add_well_taps_cell {TAP_CELL}".format(TAP_CELL=tap_cell))
+            self.append("add_well_taps -cell_interval {INTERVAL} -in_row_offset {OFFSET}".format(INTERVAL=interval, OFFSET=offset))
+        except KeyError:
+            pass
+        finally:
+            self.logger.warning(
+                "You have not overridden place_tap_cells. By default this step adds a simple set of tapcells or does nothing; you will have trouble with power strap creation later.")
         return True
 
     def place_pins(self) -> bool:

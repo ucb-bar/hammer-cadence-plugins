@@ -269,15 +269,15 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return True
 
     def add_tieoffs(self) -> bool:
-        tiecells = self.technology.get_special_cell_by_type(CellType.TieCell)[0].name
-        if len(tiecells) != 2:
-            self.logger.warning(
-                "The technology plugin 'special cells: tiecells' field is malformed or does not exist. It should specify one hi cell first, then one lo tiecell. No tiecells will be added. You can override this with a tiecell hook if you do not want to specify special cells in the technology plugin.")
-        else:
-            hi_tie = str(tiecells[0])
-            lo_tie = str(tiecells[1])
-            self.verbose_append("set_db use_tiehilo_for_const duplicate")
-            self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=hi_tie, LO_TIEOFF=lo_tie))
+        tie_hi_cell = self.technology.get_special_cell_by_type(CellType.TieHiCell)[0].name[0]
+        tie_lo_cell = self.technology.get_special_cell_by_type(CellType.TieLoCell)[0].name[0]
+
+        if tie_hi_cell == None or tie_lo_cell == None:
+            self.logger.info("Hi and Lo tiecells are not specified and will not be added during synthesis.")
+            return True
+
+        self.verbose_append("set_db use_tiehilo_for_const duplicate")
+        self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
         return True
 
     def generate_reports(self) -> bool:
