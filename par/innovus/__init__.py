@@ -440,7 +440,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def add_fillers(self) -> bool:
         """add filler cells"""
         stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)[0].name
-        if stdfiller == []:
+        if len(stdfiller) == 0:
             self.logger.warning(
                 "The technology plugin 'special cells: stdfiller' field does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with a add_fillers hook if you do not want to specify filler cells in the technology plugin.")
         else:
