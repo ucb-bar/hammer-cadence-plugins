@@ -9,7 +9,6 @@ from hammer_vlsi import HammerToolStep, HierarchicalMode
 from hammer_utils import VerilogUtils
 from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
-from hammer_logging import HammerVLSILogging
 from hammer_vlsi import MMMCCornerType
 import hammer_tech
 
@@ -17,7 +16,7 @@ from typing import Dict, List, Any, Optional
 
 import os
 import json
-
+import textwrap
 
 class Genus(HammerSynthesisTool, CadenceTool):
     @property
@@ -96,14 +95,26 @@ class Genus(HammerSynthesisTool, CadenceTool):
     def do_pre_steps(self, first_step: HammerToolStep) -> bool:
         assert super().do_pre_steps(first_step)
         # If the first step isn't init_environment, then reload from a checkpoint.
+        self.append("\n"+"#"*78)
+        self.append("# Starting stage: {}".format(first_step.name))
+        self.append("#"*78+"\n")
         if first_step.name != "init_environment":
-            self.verbose_append("read_db pre_{step}".format(step=first_step.name))
+            self.append_tcl(
+                "source pre_{step}.script.tcl".format(step=first_step.name))
+            self.append_tcl(
+                "read_db pre_{step}.db".format(step=first_step.name))
         return True
 
     def do_between_steps(self, prev: HammerToolStep, next: HammerToolStep) -> bool:
         assert super().do_between_steps(prev, next)
         # Write a checkpoint to disk.
-        self.verbose_append("write_db -to_file pre_{step}".format(step=next.name))
+        self.verbose_append_wrap(["write_db", 
+            "-all_root_attributes",
+            "-script pre_{step}.setup.tcl".format(step=next.name),
+            "pre_{step}.db".format(step=next.name)])
+        self.append("#"*78)
+        self.append("# Starting stage: {}".format(next.name))
+        self.append("#"*78)
         return True
 
     def do_post_steps(self) -> bool:
@@ -172,46 +183,53 @@ class Genus(HammerSynthesisTool, CadenceTool):
         self.create_enter_script()
 
         # Python sucks here for verbosity
-        verbose_append = self.verbose_append
+        verbose_append_wrap = self.verbose_append_wrap
 
         # Generic Settings
-        verbose_append("set_db hdl_error_on_blackbox true")
-        verbose_append("set_db max_cpus_per_server {}".format(self.get_setting("vlsi.core.max_threads")))
+        verbose_append_wrap("set_db hdl_error_on_blackbox true")
+        verbose_append_wrap("set_db max_cpus_per_server {}".format(self.get_setting("vlsi.core.max_threads")))
 
         # Clock gating setup
         if self.get_setting("synthesis.clock_gating_mode") == "auto":
-            verbose_append("set_db lp_clock_gating_infer_enable  true")
+            verbose_append_wrap("set_db lp_clock_gating_infer_enable  true")
             # Innovus will create instances named CLKGATE_foo, CLKGATE_bar, etc.
-            verbose_append("set_db lp_clock_gating_prefix  {CLKGATE}")
-            verbose_append("set_db lp_insert_clock_gating  true")
-            verbose_append("set_db lp_clock_gating_hierarchical true")
-            verbose_append("set_db lp_insert_clock_gating_incremental true")
-            verbose_append("set_db lp_clock_gating_register_aware true")
+            verbose_append_wrap("set_db lp_clock_gating_prefix  {CLKGATE}")
+            verbose_append_wrap("set_db lp_insert_clock_gating  true")
+            verbose_append_wrap("set_db lp_clock_gating_hierarchical true")
+            verbose_append_wrap("set_db lp_insert_clock_gating_incremental true")
+            verbose_append_wrap("set_db lp_clock_gating_register_aware true")
 
         # Set up libraries.
         # Read timing libraries.
         mmmc_path = os.path.join(self.run_dir, "mmmc.tcl")
         with open(mmmc_path, "w") as f:
             f.write(self.generate_mmmc_script())
-        verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
+        verbose_append_wrap("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             # Read ILMs.
             for ilm in self.get_input_ilms():
                 # Assumes that the ILM was created by Innovus (or at least the file/folder structure).
-                verbose_append("read_ilm -basename {data_dir}/{module}_postRoute -module_name {module}".format(
-                    data_dir=ilm.data_dir, module=ilm.module))
+                verbose_append_wrap(["read_ilm",
+                    "-basename {data_dir}/{module}_postRoute"
+                        .format(data_dir=ilm.data_dir, module=ilm.module),
+                    "-module_name {module}".format(module=ilm.module)])
+
 
         # Read LEF layouts.
-        lef_files = self.technology.read_libs([
-            hammer_tech.filters.lef_filter
-        ], hammer_tech.HammerTechnologyUtils.to_plain_item)
-        if self.hierarchical_mode.is_nonleaf_hierarchical():
-            ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
-            lef_files.extend(ilm_lefs)
-        verbose_append("read_physical -lef {{ {files} }}".format(
-            files=" ".join(lef_files)
-        ))
+        if self.is_physical:
+            lef_files = self.technology.read_libs([
+                hammer_tech.filters.lef_filter
+            ], hammer_tech.HammerTechnologyUtils.to_plain_item)
+            if self.hierarchical_mode.is_nonleaf_hierarchical():
+                ilm_lefs = list(map(lambda ilm: ilm.lef, self.get_input_ilms()))
+                lef_files.extend(ilm_lefs)
+        else:
+            lef_files = self.technology.read_libs([
+                hammer_tech.filters.tech_lef_filter
+            ], hammer_tech.HammerTechnologyUtils.to_plain_item)
+        verbose_append_wrap(["read_physical -lef"] + lef_files)
+
 
         # Load input files and check that they are all Verilog.
         if not self.check_input_files([".v", ".sv"]):
@@ -230,25 +248,25 @@ class Genus(HammerSynthesisTool, CadenceTool):
         ], hammer_tech.HammerTechnologyUtils.to_plain_item)
 
         # Read the RTL.
-        verbose_append("read_hdl {{ {} }}".format(" ".join(abspath_input_files)))
+        verbose_append_wrap(["read_hdl"]+abspath_input_files)
 
         # Elaborate/parse the RTL.
-        verbose_append("elaborate {}".format(self.top_module))
+        verbose_append_wrap("elaborate {}".format(self.top_module))
         # Preserve submodules
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             for ilm in self.get_input_ilms():
-                verbose_append("set_db module:{top}/{mod} .preserve true".format(top=self.top_module, mod=ilm.module))
-        verbose_append("init_design -top {}".format(self.top_module))
+                verbose_append_wrap("set_db module:{top}/{mod} .preserve true".format(top=self.top_module, mod=ilm.module))
+        verbose_append_wrap("init_design -top {}".format(self.top_module))
 
         # Prevent floorplanning targets from getting flattened.
         # TODO: is there a way to track instance paths through the synthesis process?
-        verbose_append("set_db root: .auto_ungroup none")
+        verbose_append_wrap("set_db root: .auto_ungroup none")
 
         # Set units to pF and technology time unit.
         # Must be done after elaboration.
-        verbose_append("set_units -capacitance 1.0pF")
-        verbose_append("set_load_unit -picofarads 1")
-        verbose_append("set_units -time 1.0{}".format(self.get_time_unit().value_prefix + self.get_time_unit().unit))
+        verbose_append_wrap("set_units -capacitance 1.0pF")
+        verbose_append_wrap("set_load_unit -picofarads 1")
+        verbose_append_wrap("set_units -time 1.0{}".format(self.get_time_unit().value_prefix + self.get_time_unit().unit))
 
         # Set "don't use" cells.
         for l in self.generate_dont_use_commands():
@@ -257,22 +275,65 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return True
 
     def syn_generic(self) -> bool:
-        self.verbose_append("syn_generic")
+        if self.is_physical:
+            self.verbose_append_wrap("syn_generic -physical")
+        else:
+            self.verbose_append_wrap("syn_generic")
         return True
 
     def syn_map(self) -> bool:
-        self.verbose_append("syn_map")
+        if self.is_physical:
+            self.verbose_append_wrap("syn_map -physical")
+        else:
+            self.verbose_append_wrap("syn_map")
         return True
 
     def generate_reports(self) -> bool:
         """Generate reports."""
-        # TODO: extend report generation capabilities
-        self.verbose_append("write_reports -directory reports -tag final")
+        # [ssteffl]: TODO: filter out unnecessary reports here.
+        self.verbose_append_wrap(["write_reports",
+            "-directory reports",
+            "-tag final"])
+        for corner in self.get_mmmc_corners():
+            if corner.type is MMMCCornerType.Setup:
+                view_name = "{cname}.setup_view".format(cname=corner.name)
+                self.verbose_append_wrap(["report_timing",
+                    "-views", view_name,
+                    "-path_type summary",
+                    "-split_delay",
+                    "-output_format text",
+                    "> reports/final-setup-summary.rpt"])
+                self.verbose_append_wrap(["report_timing",
+                    "-views", view_name,
+                    "-lint",
+                    "-output_format text",
+                    "> reports/final-setup-lint.rpt"])
+                if self.is_physical:
+                    self.verbose_append_wrap(["report_timing",
+                        "-views", view_name,
+                        "-path_type full_clock",
+                        "-split_delay",
+                        "-physical",
+                        "-output_format text",
+                        "> reports/final-setup-physical.rpt"])
+                self.verbose_append_wrap(["report_timing",
+                    "-views", view_name,
+                    "-path_type full_clock",
+                    "-split_delay",
+                    "-nets",
+                    "-nworst 10",
+                    "-fields { timing_point flags arc edge cell fanout load ",
+                    "          transition delay arrival",
+                    "          pin_location wire_length instance_location }",
+                    "-output_format text",
+                    "> reports/final-setup.rpt"])
         return True
+
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
-        self.append('''
+        self.append(textwrap.dedent('''
+        # dump {seq_cells: [], reg_paths: []}
         set write_regs_ir "./find_regs.json"
         set write_regs_ir [open $write_regs_ir "w"]
         puts $write_regs_ir "\{"
@@ -311,42 +372,46 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         puts $write_regs_ir "\}"
         close $write_regs_ir
-        ''')
+        '''))
 
         return True
 
     def write_outputs(self) -> bool:
-        verbose_append = self.verbose_append
+        verbose_append_wrap = self.verbose_append_wrap
         top = self.top_module
 
-        verbose_append("write_hdl > {}".format(self.mapped_v_path))
-        verbose_append("write_script > {}.mapped.scr".format(top))
-        # TODO: remove hardcoded my_view string
-        view_name = "my_view"
+        verbose_append_wrap("write_hdl > {}.mapped.v".format(top))
+        verbose_append_wrap("write_script > {}.mapped.scr".format(top))
         corners = self.get_mmmc_corners()
         for corner in corners:
             if corner.type is MMMCCornerType.Setup:
-                view_name = "{cname}.setup_view".format(cname=corner.name)
-        verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
+                view_name = "{}.setup_view".format(corner.name)
+                verbose_append_wrap(["write_sdc",
+                    "-view {}".format(view_name),
+                    "> {}.mapped.sdc".format(top)])
 
         # We just get "Cannot trace ILM directory. Data corrupted."
         # -hierarchical needs to be used for non-leaf modules
-        is_hier = self.hierarchical_mode != HierarchicalMode.Leaf # self.hierarchical_mode != HierarchicalMode.Flat
-        verbose_append("write_design -innovus {hier_flag} -gzip_files {top}".format(
-            hier_flag="-hierarchical" if is_hier else "", top=top))
+        # self.hierarchical_mode != HierarchicalMode.Flat
+        is_hier = self.hierarchical_mode != HierarchicalMode.Leaf 
+        verbose_append_wrap(["write_design",
+            "-innovus {}".format("-hierarchical" if is_hier else ""),
+            "-gzip_files {}".format(top)])
 
-        verbose_append("write_sdf > {run_dir}/{top}.mapped.sdf".format(run_dir=self.run_dir, top=top))
+        verbose_append_wrap(["write_sdf",
+            "> {top}.mapped.sdf".format(top=top)])
 
         self.ran_write_outputs = True
 
         return True
 
+
     def run_genus(self) -> bool:
-        verbose_append = self.verbose_append
+        verbose_append_wrap = self.verbose_append_wrap
 
         """Close out the synthesis script and run Genus."""
         # Quit Genus.
-        verbose_append("quit")
+        verbose_append_wrap("quit")
 
         # Create synthesis script.
         syn_tcl_filename = os.path.join(self.run_dir, "syn.tcl")
@@ -357,7 +422,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # Build args.
         args = [
             self.get_setting("synthesis.genus.genus_bin"),
-            "-f", syn_tcl_filename,
+            "-abort_on_error",
+            "-f", "./syn.tcl",
             "-no_gui"
         ]
 
@@ -365,12 +431,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
             self.logger.info("Generate-only mode: command-line is " + " ".join(args))
         else:
             # Temporarily disable colours/tag to make run output more readable.
-            # TODO: think of a more elegant way to do this?
-            HammerVLSILogging.enable_colour = False
-            HammerVLSILogging.enable_tag = False
-            self.run_executable(args, cwd=self.run_dir) # TODO: check for errors and deal with them
-            HammerVLSILogging.enable_colour = True
-            HammerVLSILogging.enable_tag = True
+            self.run_executable(args, cwd=self.run_dir)
 
         return True
 
