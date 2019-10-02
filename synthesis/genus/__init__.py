@@ -15,6 +15,9 @@ import hammer_tech
 
 from typing import Dict, List, Any, Optional
 
+import specialcells
+from specialcells import CellType, SpecialCell
+
 import os
 import json
 
@@ -88,6 +91,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
             self.init_environment,
             self.syn_generic,
             self.syn_map,
+            self.add_tieoffs,
             self.write_regs,
             self.generate_reports,
             self.write_outputs
@@ -262,6 +266,18 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def syn_map(self) -> bool:
         self.verbose_append("syn_map")
+        return True
+
+    def add_tieoffs(self) -> bool:
+        tie_hi_cell = self.technology.get_special_cell_by_type(CellType.TieHiCell)[0].name[0]
+        tie_lo_cell = self.technology.get_special_cell_by_type(CellType.TieLoCell)[0].name[0]
+
+        if tie_hi_cell == None or tie_lo_cell == None:
+            self.logger.info("Hi and Lo tiecells are not specified and will not be added during synthesis.")
+            return True
+
+        self.verbose_append("set_db use_tiehilo_for_const duplicate")
+        self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
         return True
 
     def generate_reports(self) -> bool:
