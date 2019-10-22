@@ -269,12 +269,19 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return True
 
     def add_tieoffs(self) -> bool:
-        tie_hi_cell = self.technology.get_special_cell_by_type(CellType.TieHiCell)[0].name[0]
-        tie_lo_cell = self.technology.get_special_cell_by_type(CellType.TieLoCell)[0].name[0]
+        tie_hi_cell = self.technology.get_special_cell_by_type(CellType.TieHiCell)
+        tie_lo_cell = self.technology.get_special_cell_by_type(CellType.TieLoCell)
 
         if tie_hi_cell == None or tie_lo_cell == None:
-            self.logger.info("Hi and Lo tiecells are not specified and will not be added during synthesis.")
+            self.logger.warning("Tie Cells are not defined in the tech plugin. Tieoffs will not be added during synthesis.")
             return True
+
+        if len(tie_hi_cell) != 1 or len (tie_lo_cell) != 1:
+            self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
+            return True
+
+        tie_hi_cell = tie_hi_cell[0].name[0]
+        tie_lo_cell = tie_lo_cell[0].name[0]
 
         self.verbose_append("set_db use_tiehilo_for_const duplicate")
         self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))

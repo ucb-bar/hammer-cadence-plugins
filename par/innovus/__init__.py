@@ -318,8 +318,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def place_tap_cells(self) -> bool:
-        # This should be overridden by a tech specific hook
-        tap_cell = self.technology.get_special_cell_by_type(CellType.TapCell)[0].name[0]
+        tap_cell = self.technology.get_special_cell_by_type(CellType.TapCell)
+
+        if tap_cell == None:
+            self.logger.warning("Tap cells are not defined in the tech plugin and will not be added. This should be overridden with a user hook.")
+            return True
+
+        if len(tap_cell) == 0:
+            self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook.")
+            return True
+
+        tap_cell = tap_cell[0].name[0]
+
         try:
             interval = self.get_setting("vlsi.technology.tap_cell_interval")
             offset = self.get_setting("vlsi.technology.tap_cell_offset")
@@ -440,11 +450,17 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def add_fillers(self) -> bool:
         """add filler cells"""
-        stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)[0].name
+        stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)
+
+        if stdfiller == None:
+            self.logger.warning("Standard filler cells are not defined in the tech plugin. Filler cells will not be added.")
+            return True
+
         if len(stdfiller) == 0:
             self.logger.warning(
-                "The technology plugin 'special cells: stdfiller' field does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with a add_fillers hook if you do not want to specify filler cells in the technology plugin.")
+                "The technology plugin 'special cells: stdfiller' field does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with an add_fillers hook if you do not specify filler cells in the technology plugin.")
         else:
+            stdfiller = stdfiller[0].name
             filler_str = ""
             for cell in stdfiller:
                 filler_str += str(cell) + ' '
