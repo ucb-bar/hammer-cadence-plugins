@@ -488,7 +488,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             pcells=" ".join(self.get_physical_only_cells())
         ))
 
-        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -flat -exclude_insts_of_cells {{ {pcells} }} ".format(
+        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -exclude_insts_of_cells {{ {pcells} }} ".format(
             netlist=self.output_sim_netlist_filename,
             top=self.top_module,
             pcells=" ".join(self.get_physical_only_cells())
