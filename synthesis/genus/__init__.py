@@ -272,10 +272,6 @@ class Genus(HammerSynthesisTool, CadenceTool):
         tie_hi_cell = self.technology.get_special_cell_by_type(CellType.TieHiCell)
         tie_lo_cell = self.technology.get_special_cell_by_type(CellType.TieLoCell)
 
-        if tie_hi_cell == None or tie_lo_cell == None:
-            self.logger.warning("Tie Cells are not defined in the tech plugin. Tieoffs will not be added during synthesis.")
-            return True
-
         if len(tie_hi_cell) != 1 or len (tie_lo_cell) != 1:
             self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
             return True

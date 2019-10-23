@@ -320,10 +320,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def place_tap_cells(self) -> bool:
         tap_cell = self.technology.get_special_cell_by_type(CellType.TapCell)
 
-        if tap_cell == None:
-            self.logger.warning("Tap cells are not defined in the tech plugin and will not be added. This should be overridden with a user hook.")
-            return True
-
         if len(tap_cell) == 0:
             self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook.")
             return True
@@ -451,10 +447,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def add_fillers(self) -> bool:
         """add filler cells"""
         stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)
-
-        if stdfiller == None:
-            self.logger.warning("Standard filler cells are not defined in the tech plugin. Filler cells will not be added.")
-            return True
 
         if len(stdfiller) == 0:
             self.logger.warning(
