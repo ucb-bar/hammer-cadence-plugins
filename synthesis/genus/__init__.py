@@ -5,7 +5,7 @@
 #
 #  See LICENSE for licence details.
 
-from hammer_vlsi import HammerToolStep, HierarchicalMode
+from hammer_vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
 from hammer_utils import VerilogUtils
 from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
