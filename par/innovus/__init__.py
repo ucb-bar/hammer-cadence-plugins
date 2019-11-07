@@ -14,7 +14,7 @@ import errno
 import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
+from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, HammerToolHookAction, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint
 from hammer_logging import HammerVLSILogging
 import hammer_tech
@@ -148,7 +148,29 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         except OSError as e:
             if e.errno != errno.EEXIST:
                 self.logger.warning("Failed to create post_* symlinks: " + str(e))
+
+        # Create db post_<last step>
+        last = "post_{step}".format(step=self._step_transitions[-1][1])
+        self.verbose_append("write_db {last}".format(last=last))
+
+        # Create open_chip script pointing to post_<last step>.
+        with open(self.open_chip_tcl, "w") as f:
+            f.write("""
+        read_db {name}
+                """.format(name=last))
+
+        with open(self.open_chip_script, "w") as f:
+            f.write("""#!/bin/bash
+        cd {run_dir}
+        source enter
+        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
+                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
+        os.chmod(self.open_chip_script, 0o755)
+
         return self.run_innovus()
+
+    def get_tool_hooks(self) -> List[HammerToolHookAction]:
+        return [self.make_persistent_hook(innovus_global_settings)]
 
     @property
     def steps(self) -> List[HammerToolStep]:
@@ -192,13 +214,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def init_design(self) -> bool:
         """Initialize the design."""
-        self.create_enter_script()
-
         verbose_append = self.verbose_append
 
-        # Generic settings
-        verbose_append("set_db design_process_node {}".format(self.get_setting("vlsi.core.node")))
-        verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
         # Perform common path pessimism removal in setup and hold mode
         verbose_append("set_db timing_analysis_cppr both")
         # Use OCV mode for timing analysis by default
@@ -619,20 +636,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Make sure that generated-scripts exists.
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
-        # Create open_chip script.
-        with open(self.open_chip_tcl, "w") as f:
-            f.write("""
-        read_db {name}
-                """.format(name=self.output_innovus_lib_name))
-
-        with open(self.open_chip_script, "w") as f:
-            f.write("""#!/bin/bash
-        cd {run_dir}
-        source enter
-        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
-                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
-        os.chmod(self.open_chip_script, 0o755)
-
         return True
 
     @property
@@ -947,5 +950,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             ])
         results.append("add_stripes " + " ".join(options) + "\n")
         return results
+
+def innovus_global_settings(ht: HammerTool) -> bool:
+    """Settings that need to be reapplied at every tool invocation"""
+    ht.create_enter_script()
+
+    # Python sucks here for verbosity
+    verbose_append = ht.verbose_append
+
+    # Generic settings
+    verbose_append("set_db design_process_node {}".format(ht.get_setting("vlsi.core.node")))
+    verbose_append("set_multi_cpu_usage -local_cpu {}".format(ht.get_setting("vlsi.core.max_threads")))
+
+    return True
 
 tool = Innovus

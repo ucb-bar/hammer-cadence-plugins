@@ -85,6 +85,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
     def tool_config_prefix(self) -> str:
         return "synthesis.genus"
 
+    def get_tool_hooks(self) -> List[HammerToolHookAction]:
+        return [self.make_persistent_hook(genus_global_settings)]
+
     @property
     def steps(self) -> List[HammerToolStep]:
         return self.make_steps_from_methods([
@@ -173,14 +176,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
             return path
 
     def init_environment(self) -> bool:
-        self.create_enter_script()
-
         # Python sucks here for verbosity
         verbose_append = self.verbose_append
-
-        # Generic Settings
-        verbose_append("set_db hdl_error_on_blackbox true")
-        verbose_append("set_db max_cpus_per_server {}".format(self.get_setting("vlsi.core.max_threads")))
 
         # Clock gating setup
         if self.get_setting("synthesis.clock_gating_mode") == "auto":
@@ -393,5 +390,17 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         return True
 
+def genus_global_settings(ht: HammerTool) -> bool:
+    """Settings that need to be reapplied at every tool invocation"""
+    ht.create_enter_script()
+
+    # Python sucks here for verbosity
+    verbose_append = ht.verbose_append
+
+    # Generic Settings
+    verbose_append("set_db hdl_error_on_blackbox true")
+    verbose_append("set_db max_cpus_per_server {}".format(ht.get_setting("vlsi.core.max_threads")))
+
+    return True
 
 tool = Genus
