@@ -152,10 +152,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 self.logger.warning("Failed to create post_* symlinks: " + str(e))
 
         # Create db post_<last step>
-        last = "post_{step}".format(step=self._step_transitions[-1][1])
-        self.verbose_append("write_db {last}".format(last=last))
-        # Symlink the database to latest for open_chip script later.
-        self.verbose_append("ln -sf {last} latest".format(last=last))
+        # TODO: this doesn't work if you're only running the very last step
+        if len(self._step_transitions) > 0:
+            last = "post_{step}".format(step=self._step_transitions[-1][1])
+            self.verbose_append("write_db {last}".format(last=last))
+            # Symlink the database to latest for open_chip script later.
+            self.verbose_append("ln -sf {last} latest".format(last=last))
 
         # Create open_chip script pointing to post_<last step>.
         with open(self.open_chip_tcl, "w") as f:
