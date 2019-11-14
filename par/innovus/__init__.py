@@ -134,7 +134,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Write a checkpoint to disk.
         self.verbose_append("write_db pre_{step}".format(step=next.name))
         # Symlink the database to latest for open_chip script later.
-        self.verbose_append("ln -sf pre_{step} latest".format(step=next.name))
+        self.verbose_append("ln -sfn pre_{step} latest".format(step=next.name))
         self._step_transitions = self._step_transitions + [(prev.name, next.name)]
         return True
 
@@ -157,7 +157,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             last = "post_{step}".format(step=self._step_transitions[-1][1])
             self.verbose_append("write_db {last}".format(last=last))
             # Symlink the database to latest for open_chip script later.
-            self.verbose_append("ln -sf {last} latest".format(last=last))
+            self.verbose_append("ln -sfn {last} latest".format(last=last))
 
         # Create open_chip script pointing to post_<last step>.
         with open(self.open_chip_tcl, "w") as f:
