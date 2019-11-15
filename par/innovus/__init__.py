@@ -64,6 +64,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         self.output_gds = self.output_gds_filename
         self.output_netlist = self.output_netlist_filename
+        self.output_sim_netlist = self.output_sim_netlist_filename
         self.hcells_list = []
 
         if not os.path.isfile(self.all_regs_path):
@@ -94,6 +95,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     @property
     def output_netlist_filename(self) -> str:
         return os.path.join(self.run_dir, "{top}.lvs.v".format(top=self.top_module))
+
+    @property
+    def output_sim_netlist_filename(self) -> str:
+        return os.path.join(self.run_dir, "{top}.sim.v".format(top=self.top_module))
 
     @property
     def all_regs_path(self) -> str:
@@ -511,6 +516,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             top=self.top_module,
             pcells=" ".join(self.get_physical_only_cells())
         ))
+
+        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -exclude_insts_of_cells {{ {pcells} }} ".format(
+            netlist=self.output_sim_netlist_filename,
+            top=self.top_module,
+            pcells=" ".join(self.get_physical_only_cells())
+        ))
+
         return True
 
     def write_gds(self) -> bool:
