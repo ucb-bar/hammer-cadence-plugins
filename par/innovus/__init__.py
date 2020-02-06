@@ -344,13 +344,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def place_tap_cells(self) -> bool:
-        tap_cell = self.technology.get_special_cell_by_type(CellType.TapCell)
+        tap_cells = self.technology.get_special_cell_by_type(CellType.TapCell)
 
-        if len(tap_cell) == 0:
+        if len(tap_cells) == 0:
             self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook.")
             return True
 
-        tap_cell = tap_cell[0].name[0]
+        tap_cell = tap_cells[0].name[0]
 
         try:
             interval = self.get_setting("vlsi.technology.tap_cell_interval")
@@ -472,13 +472,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def add_fillers(self) -> bool:
         """add filler cells"""
-        stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)
+        stdfillers = self.technology.get_special_cell_by_type(CellType.StdFiller)
 
-        if len(stdfiller) == 0:
+        if len(stdfillers) == 0:
             self.logger.warning(
                 "The technology plugin 'special cells: stdfiller' field does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with an add_fillers hook if you do not specify filler cells in the technology plugin.")
         else:
-            stdfiller = stdfiller[0].name
+            stdfiller = stdfillers[0].name
             filler_str = ""
             for cell in stdfiller:
                 filler_str += str(cell) + ' '
@@ -969,6 +969,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
 def innovus_global_settings(ht: HammerTool) -> bool:
     """Settings that need to be reapplied at every tool invocation"""
+    assert isinstance(ht, HammerPlaceAndRouteTool)
+    assert isinstance(ht, CadenceTool)
     ht.create_enter_script()
 
     # Python sucks here for verbosity
