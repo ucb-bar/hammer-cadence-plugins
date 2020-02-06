@@ -266,15 +266,15 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return True
 
     def add_tieoffs(self) -> bool:
-        tie_hi_cell = self.technology.get_special_cell_by_type(CellType.TieHiCell)
-        tie_lo_cell = self.technology.get_special_cell_by_type(CellType.TieLoCell)
+        tie_hi_cells = self.technology.get_special_cell_by_type(CellType.TieHiCell)
+        tie_lo_cells = self.technology.get_special_cell_by_type(CellType.TieLoCell)
 
-        if len(tie_hi_cell) != 1 or len (tie_lo_cell) != 1:
+        if len(tie_hi_cells) != 1 or len (tie_lo_cells) != 1:
             self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
             return True
 
-        tie_hi_cell = tie_hi_cell[0].name[0]
-        tie_lo_cell = tie_lo_cell[0].name[0]
+        tie_hi_cell = tie_hi_cells[0].name[0]
+        tie_lo_cell = tie_lo_cells[0].name[0]
 
         self.verbose_append("set_db use_tiehilo_for_const duplicate")
         self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
@@ -392,6 +392,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
 def genus_global_settings(ht: HammerTool) -> bool:
     """Settings that need to be reapplied at every tool invocation"""
+    assert isinstance(ht, HammerSynthesisTool)
+    assert isinstance(ht, CadenceTool)
     ht.create_enter_script()
 
     # Python sucks here for verbosity
