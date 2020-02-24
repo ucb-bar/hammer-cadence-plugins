@@ -724,6 +724,14 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         elif floorplan_mode == "auto":
             output.append("# Using auto-generated floorplan")
             output.append("plan_design")
+            spacing = self.get_setting("par.blockage_spacing")
+            bot_layer = self.get_stackup().get_metal_by_index(1).name
+            top_layer = self.get_setting("par.blockage_spacing_top_layer")
+            if top_layer is not None:
+                output.append("create_place_halo -all_blocks -halo_deltas {{{s} {s} {s} {s}}} -snap_to_site".format(
+                    s=spacing))
+                output.append("create_route_halo -all_blocks -bottom_layer {b} -space {s} -top_layer {t}".format(
+                    b=bot_layer, t=top_layer, s=spacing))
         else:
             if floorplan_mode != "blank":
                 self.logger.error("Invalid floorplan_mode {mode}. Using blank floorplan.".format(mode=floorplan_mode))
