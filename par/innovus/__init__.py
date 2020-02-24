@@ -14,7 +14,7 @@ import errno
 import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, \
+from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, HammerToolHookAction, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint
 from hammer_logging import HammerVLSILogging
 import hammer_tech
@@ -64,6 +64,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         self.output_gds = self.output_gds_filename
         self.output_netlist = self.output_netlist_filename
+        self.output_sim_netlist = self.output_sim_netlist_filename
         self.hcells_list = []
 
         if not os.path.isfile(self.all_regs_path):
@@ -94,6 +95,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     @property
     def output_netlist_filename(self) -> str:
         return os.path.join(self.run_dir, "{top}.lvs.v".format(top=self.top_module))
+
+    @property
+    def output_sim_netlist_filename(self) -> str:
+        return os.path.join(self.run_dir, "{top}.sim.v".format(top=self.top_module))
 
     @property
     def all_regs_path(self) -> str:
@@ -133,6 +138,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         assert super().do_between_steps(prev, next)
         # Write a checkpoint to disk.
         self.verbose_append("write_db pre_{step}".format(step=next.name))
+        # Symlink the database to latest for open_chip script later.
+        self.verbose_append("ln -sfn pre_{step} latest".format(step=next.name))
         self._step_transitions = self._step_transitions + [(prev.name, next.name)]
         return True
 
@@ -148,7 +155,31 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         except OSError as e:
             if e.errno != errno.EEXIST:
                 self.logger.warning("Failed to create post_* symlinks: " + str(e))
+
+        # Create db post_<last step>
+        # TODO: this doesn't work if you're only running the very last step
+        if len(self._step_transitions) > 0:
+            last = "post_{step}".format(step=self._step_transitions[-1][1])
+            self.verbose_append("write_db {last}".format(last=last))
+            # Symlink the database to latest for open_chip script later.
+            self.verbose_append("ln -sfn {last} latest".format(last=last))
+
+        # Create open_chip script pointing to post_<last step>.
+        with open(self.open_chip_tcl, "w") as f:
+            f.write("read_db latest")
+
+        with open(self.open_chip_script, "w") as f:
+            f.write("""#!/bin/bash
+        cd {run_dir}
+        source enter
+        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
+                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
+        os.chmod(self.open_chip_script, 0o755)
+
         return self.run_innovus()
+
+    def get_tool_hooks(self) -> List[HammerToolHookAction]:
+        return [self.make_persistent_hook(innovus_global_settings)]
 
     @property
     def steps(self) -> List[HammerToolStep]:
@@ -192,13 +223,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def init_design(self) -> bool:
         """Initialize the design."""
-        self.create_enter_script()
-
         verbose_append = self.verbose_append
 
-        # Generic settings
-        verbose_append("set_db design_process_node {}".format(self.get_setting("vlsi.core.node")))
-        verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
         # Perform common path pessimism removal in setup and hold mode
         verbose_append("set_db timing_analysis_cppr both")
         # Use OCV mode for timing analysis by default
@@ -318,13 +344,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def place_tap_cells(self) -> bool:
-        tap_cell = self.technology.get_special_cell_by_type(CellType.TapCell)
+        tap_cells = self.technology.get_special_cell_by_type(CellType.TapCell)
 
-        if len(tap_cell) == 0:
+        if len(tap_cells) == 0:
             self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook.")
             return True
 
-        tap_cell = tap_cell[0].name[0]
+        tap_cell = tap_cells[0].name[0]
 
         try:
             interval = self.get_setting("vlsi.technology.tap_cell_interval")
@@ -446,13 +472,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def add_fillers(self) -> bool:
         """add filler cells"""
-        stdfiller = self.technology.get_special_cell_by_type(CellType.StdFiller)
+        stdfillers = self.technology.get_special_cell_by_type(CellType.StdFiller)
 
-        if len(stdfiller) == 0:
+        if len(stdfillers) == 0:
             self.logger.warning(
                 "The technology plugin 'special cells: stdfiller' field does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with an add_fillers hook if you do not specify filler cells in the technology plugin.")
         else:
-            stdfiller = stdfiller[0].name
+            stdfiller = stdfillers[0].name
             filler_str = ""
             for cell in stdfiller:
                 filler_str += str(cell) + ' '
@@ -490,6 +516,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             top=self.top_module,
             pcells=" ".join(self.get_physical_only_cells())
         ))
+
+        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -exclude_insts_of_cells {{ {pcells} }} ".format(
+            netlist=self.output_sim_netlist_filename,
+            top=self.top_module,
+            pcells=" ".join(self.get_physical_only_cells())
+        ))
+
         return True
 
     def write_gds(self) -> bool:
@@ -618,20 +651,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Make sure that generated-scripts exists.
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
-
-        # Create open_chip script.
-        with open(self.open_chip_tcl, "w") as f:
-            f.write("""
-        read_db {name}
-                """.format(name=self.output_innovus_lib_name))
-
-        with open(self.open_chip_script, "w") as f:
-            f.write("""#!/bin/bash
-        cd {run_dir}
-        source enter
-        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
-                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
-        os.chmod(self.open_chip_script, 0o755)
 
         return True
 
@@ -947,5 +966,20 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             ])
         results.append("add_stripes " + " ".join(options) + "\n")
         return results
+
+def innovus_global_settings(ht: HammerTool) -> bool:
+    """Settings that need to be reapplied at every tool invocation"""
+    assert isinstance(ht, HammerPlaceAndRouteTool)
+    assert isinstance(ht, CadenceTool)
+    ht.create_enter_script()
+
+    # Python sucks here for verbosity
+    verbose_append = ht.verbose_append
+
+    # Generic settings
+    verbose_append("set_db design_process_node {}".format(ht.get_setting("vlsi.core.node")))
+    verbose_append("set_multi_cpu_usage -local_cpu {}".format(ht.get_setting("vlsi.core.max_threads")))
+
+    return True
 
 tool = Innovus

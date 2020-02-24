@@ -5,7 +5,7 @@
 #
 #  See LICENSE for licence details.
 
-from hammer_vlsi import HammerToolStep, HierarchicalMode
+from hammer_vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
 from hammer_utils import VerilogUtils
 from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
@@ -84,6 +84,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def tool_config_prefix(self) -> str:
         return "synthesis.genus"
+
+    def get_tool_hooks(self) -> List[HammerToolHookAction]:
+        return [self.make_persistent_hook(genus_global_settings)]
 
     @property
     def steps(self) -> List[HammerToolStep]:
@@ -173,14 +176,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
             return path
 
     def init_environment(self) -> bool:
-        self.create_enter_script()
-
         # Python sucks here for verbosity
         verbose_append = self.verbose_append
-
-        # Generic Settings
-        verbose_append("set_db hdl_error_on_blackbox true")
-        verbose_append("set_db max_cpus_per_server {}".format(self.get_setting("vlsi.core.max_threads")))
 
         # Clock gating setup
         if self.get_setting("synthesis.clock_gating_mode") == "auto":
@@ -269,15 +266,15 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return True
 
     def add_tieoffs(self) -> bool:
-        tie_hi_cell = self.technology.get_special_cell_by_type(CellType.TieHiCell)
-        tie_lo_cell = self.technology.get_special_cell_by_type(CellType.TieLoCell)
+        tie_hi_cells = self.technology.get_special_cell_by_type(CellType.TieHiCell)
+        tie_lo_cells = self.technology.get_special_cell_by_type(CellType.TieLoCell)
 
-        if len(tie_hi_cell) != 1 or len (tie_lo_cell) != 1:
+        if len(tie_hi_cells) != 1 or len (tie_lo_cells) != 1:
             self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
             return True
 
-        tie_hi_cell = tie_hi_cell[0].name[0]
-        tie_lo_cell = tie_lo_cell[0].name[0]
+        tie_hi_cell = tie_hi_cells[0].name[0]
+        tie_lo_cell = tie_lo_cells[0].name[0]
 
         self.verbose_append("set_db use_tiehilo_for_const duplicate")
         self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
@@ -393,5 +390,19 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         return True
 
+def genus_global_settings(ht: HammerTool) -> bool:
+    """Settings that need to be reapplied at every tool invocation"""
+    assert isinstance(ht, HammerSynthesisTool)
+    assert isinstance(ht, CadenceTool)
+    ht.create_enter_script()
+
+    # Python sucks here for verbosity
+    verbose_append = ht.verbose_append
+
+    # Generic Settings
+    verbose_append("set_db hdl_error_on_blackbox true")
+    verbose_append("set_db max_cpus_per_server {}".format(ht.get_setting("vlsi.core.max_threads")))
+
+    return True
 
 tool = Genus
