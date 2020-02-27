@@ -136,10 +136,10 @@ class Voltus(HammerPowerTool, CadenceTool):
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
         for vcd_path in self.get_setting("power.inputs.waveforms"):
-            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {} -end {} -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope))
+            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {{}} -end {{}} -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope))
             # TODO (daniel) make this change name based on input vector file
             verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
-            verbose_append("report_power -out_file activePower.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
+            verbose_append("report_power -out_dir activePower.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
 
         return True
 
