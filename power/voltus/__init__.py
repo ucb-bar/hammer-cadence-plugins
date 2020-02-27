@@ -68,9 +68,10 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         ##TODO(daniel): add additional options
         #verbose_append("read_spef {SPEF}".format(SPEF=self.spef_file))
+        verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
         innovus_db = self.get_setting("power.inputs.database")
-        if not os.path.isdir(innovus_db):
+        if innovus_db is None or not os.path.isdir(innovus_db):
             raise ValueError("Innovus database %s not found" % (innovus_db))
 
         verbose_append("read_db {}".format(innovus_db))
@@ -124,7 +125,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         # Active Vectorless Power Analysis
         verbose_append("set_db power_method dynamic_vectorless")
         # TODO (daniel) add the resolution as an option?
-        verbose_append("set_dynamic_power_simulation -resolution 50ps")
+        verbose_append("set_dynamic_power_simulation -resolution 500ps")
         verbose_append("report_power -out_dir activePowerReports")
 
         # TODO (daniel) deal with different tb/dut hierarchies
@@ -135,9 +136,10 @@ class Voltus(HammerPowerTool, CadenceTool):
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
         for vcd_path in self.get_setting("power.inputs.waveforms"):
-            verbose_append("read_activity_file -format VCD {VCD_PATH} -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope))
+            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {} -end {} -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope))
             # TODO (daniel) make this change name based on input vector file
-            verbose_append("report_vector_profile -out_file activePower.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
+            verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
+            verbose_append("report_power -out_file activePower.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
 
         return True
 
