@@ -672,6 +672,21 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         with open(par_tcl_filename, "w") as f:
             f.write("\n".join(self.output))
 
+        # Make sure that generated-scripts exists.
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
+
+        # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
+        with open(self.open_chip_tcl, "w") as f:
+            f.write("read_db latest")
+
+        with open(self.open_chip_script, "w") as f:
+            f.write("""#!/bin/bash
+        cd {run_dir}
+        source enter
+        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
+                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
+        os.chmod(self.open_chip_script, 0o755)
+
         # Build args.
         args = [
             self.get_setting("par.innovus.innovus_bin"),
@@ -689,21 +704,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         HammerVLSILogging.enable_tag = True
 
         # TODO: check that par run was successful
-
-        # Make sure that generated-scripts exists.
-        os.makedirs(self.generated_scripts_dir, exist_ok=True)
-
-        # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
-        with open(self.open_chip_tcl, "w") as f:
-            f.write("read_db latest")
-
-        with open(self.open_chip_script, "w") as f:
-            f.write("""#!/bin/bash
-        cd {run_dir}
-        source enter
-        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
-                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
-        os.chmod(self.open_chip_script, 0o755)
 
         return True
 
