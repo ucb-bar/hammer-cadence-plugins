@@ -164,18 +164,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             # Symlink the database to latest for open_chip script later.
             self.verbose_append("ln -sfn {last} latest".format(last=last))
 
-        # Create open_chip script pointing to post_<last step>.
-        with open(self.open_chip_tcl, "w") as f:
-            f.write("read_db latest")
-
-        with open(self.open_chip_script, "w") as f:
-            f.write("""#!/bin/bash
-        cd {run_dir}
-        source enter
-        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
-                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
-        os.chmod(self.open_chip_script, 0o755)
-
         return self.run_innovus()
 
     def get_tool_hooks(self) -> List[HammerToolHookAction]:
@@ -649,9 +637,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Write SDF
         self.write_sdf()
 
-        # Make sure that generated-scripts exists.
-        os.makedirs(self.generated_scripts_dir, exist_ok=True)
-
         return True
 
     @property
@@ -686,6 +671,21 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         par_tcl_filename = os.path.join(self.run_dir, "par.tcl")
         with open(par_tcl_filename, "w") as f:
             f.write("\n".join(self.output))
+
+        # Make sure that generated-scripts exists.
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
+
+        # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
+        with open(self.open_chip_tcl, "w") as f:
+            f.write("read_db latest")
+
+        with open(self.open_chip_script, "w") as f:
+            f.write("""#!/bin/bash
+        cd {run_dir}
+        source enter
+        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
+                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
+        os.chmod(self.open_chip_script, 0o755)
 
         # Build args.
         args = [
