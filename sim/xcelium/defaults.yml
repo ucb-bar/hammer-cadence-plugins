@@ -1,0 +1,12 @@
+# Default settings for simulation using xcelium 
+sim.vcs:
+
+  # Location of the binary.
+  vcs_bin: "${synopsys.synopsys_home}/vcs/${sim.vcs.version}/bin/vcs"
+  vcs_bin_meta: lazysubst
+  vcs_home: "${synopsys.synopsys_home}/vcs/${sim.vcs.version}"
+  vcs_home_meta: lazysubst
+
+  # VCS version to use.
+  # Used to locate the binary - e.g. the 'M-2017.03' in ${synopsys.synopsys_home}/vcs/M-2017.03/bin/vcs
+  version: "M-2017.03"
