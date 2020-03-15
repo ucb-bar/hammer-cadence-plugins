@@ -43,7 +43,11 @@ import shutil
 # TODO compiler flags for c/cpp files
 # TODO benchmark tests
 # TODO force_regs function
-# TODO Need to add dependency check for sim? Currently just deletes old snapshot and re-runs...
+# TODO verify gate level works
+# TODO verify timing annotated
+# TODO access tab stuff
+# TODO revisit dependency issue (find a way to not run sim if snapshot was not re-generated)
+# TODO tests?
 
 
 class Xcelium(HammerSimTool, CadenceTool, TCLTool):
@@ -68,11 +72,9 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
     def force_regs_file_path(self) -> str:
         return os.path.join(self.run_dir, "force_regs.tcl")
 
-    ############################################################
-    #@property
-    #def access_tab_file_path(self) -> str:
-    #    return os.path.join(self.run_dir, "access.tab")
-    ############################################################
+    @property
+    def access_tab_file_path(self) -> str:
+        return os.path.join(self.run_dir, "access.tab")
 
     @property
     def simulator_snapshot_name(self) -> str:
@@ -111,7 +113,6 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         force_val = self.get_setting("sim.inputs.gl_register_force_value")
 
         seq_cells = self.seq_cells
-
         with open(self.access_tab_file_path, "w") as f:
             for cell in seq_cells:
                 f.write("acc=wn:{cell_name}\n".format(cell_name=cell))
@@ -181,21 +182,23 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         for define in defines:
             args.extend(['+define+' + define])
 
-        ###################################################################
-        #if self.level == SimulationLevel.GateLevel:
-        #    args.extend(['-P'])
-        #    args.extend([access_tab_filename])
-        #    args.extend(['-debug'])
-        #    if self.get_setting("sim.inputs.timing_annotated"):
-        #        args.extend(["+neg_tchk"])
-        #        args.extend(["+sdfverbose"])
-        #        args.extend(["-negdelay"])
-        #        args.extend(["-sdf"])
-        #        args.extend(["max:{top}:{sdf}".format(run_dir=self.run_dir, top=top_module, sdf=self.sdf_file)])
-        #    else:
-        #        args.extend(["+notimingcheck"])
-        #        args.extend(["+delay_mode_zero"])
-        ###################################################################
+        if self.level == SimulationLevel.GateLevel:
+            ###################################################################
+            #args.extend(['-P'])
+            #args.extend([access_tab_filename])
+            #args.extend(['-debug'])
+            #if self.get_setting("sim.inputs.timing_annotated"):
+            #    args.extend(["+neg_tchk"])
+            #    args.extend(["+sdfverbose"])
+            #    args.extend(["-negdelay"])
+            #    args.extend(["-sdf"])
+            #    args.extend(["max:{top}:{sdf}".format(run_dir=self.run_dir, top=top_module, sdf=self.sdf_file)])
+            #else:
+            #    args.extend(["+notimingcheck"])
+            #    args.extend(["+delay_mode_zero"])
+            ###################################################################
+            # Append sourcing of force regs tcl
+            self.append("source " + self.force_regs_file_path)
 
         args.extend(["-top", tb_name])
 
@@ -205,20 +208,21 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         HammerVLSILogging.enable_colour = False
         HammerVLSILogging.enable_tag = False
 
-        ###################################################################
-        ## Remove the csrc directory (otherwise the simulator will be stale)
-        #if os.path.exists(os.path.join(self.run_dir, "csrc")):
-        #    shutil.rmtree(os.path.join(self.run_dir, "csrc"))
-        ###################################################################
-
         # Generate a simulator
         self.run_executable(args, cwd=self.run_dir)
+
+        # Create run tcl for simulation step
+        self.append("run")
+        self.append("exit")
+        with open(self.run_tcl_path, "w") as fp:
+            fp.write("\n".join(self.output))
 
         HammerVLSILogging.enable_colour = True
         HammerVLSILogging.enable_tag = True
 
-        print(self.simulator_executable_path)
-        return os.path.exists(self.simulator_executable_path)
+        return os.path.exists(
+            self.simulator_executable_path) and os.path.exists(
+                self.run_tcl_path)
 
     def run_simulation(self) -> bool:
         if not self.get_setting("sim.inputs.execute_sim"):
@@ -227,23 +231,6 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
             )
             return True
 
-        # MOVE TO other func
-        ###################################################################
-        #top_module = self.top_module
-        #exec_flags_prepend = self.get_setting("sim.inputs.execution_flags_prepend", [])
-        #exec_flags = self.get_setting("sim.inputs.execution_flags", [])
-        #exec_flags_append = self.get_setting("sim.inputs.execution_flags_append", [])
-        #force_regs_filename = self.force_regs_file_path
-
-        #if self.level == SimulationLevel.GateLevel:
-        #    with open(self.run_tcl_path, "w") as f:
-        #        find_regs_run_tcl = []
-        #        find_regs_run_tcl.append("source " + force_regs_filename)
-        #        find_regs_run_tcl.append("run")
-        #        find_regs_run_tcl.append("exit")
-        #        f.write("\n".join(find_regs_run_tcl))
-        ###################################################################
-
         ###################################################################
         #for benchmark in self.benchmarks:
         #    if not os.path.isfile(benchmark):
@@ -251,30 +238,32 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         #      return False
         ###################################################################
 
-        # MOVE TO other func
-        ###################################################################
-        ## setup simulation arguments
-        #args = [ self.simulator_executable_path ]
-        #args.extend(exec_flags_prepend)
-        #args.extend(exec_flags)
-        #if self.level == SimulationLevel.GateLevel:
-        #    args.extend(["-ucli", "-do", self.run_tcl_path])
-        #args.extend(exec_flags_append)
+        # Setup simulation arguments
         args = [self.get_setting("sim.xcelium.xcelium_bin")]
         args.extend(["-r", self.simulator_snapshot_name])
-        ###################################################################
+
+        # Execution flags
+        exec_flags_prepend = self.get_setting(
+            "sim.inputs.execution_flags_prepend", [])
+        exec_flags = self.get_setting("sim.inputs.execution_flags", [])
+        exec_flags_append = self.get_setting(
+            "sim.inputs.execution_flags_append", [])
+        args.extend(exec_flags_prepend)
+        args.extend(exec_flags)
+        args.extend(["-input", self.run_tcl_path])
+        args.extend(exec_flags_append)
 
         HammerVLSILogging.enable_colour = False
         HammerVLSILogging.enable_tag = False
 
         ###################################################################
-        ## TODO(johnwright) We should optionally parallelize this in the future.
-        #for benchmark in self.benchmarks:
-        #    bmark_run_dir = self.benchmark_run_dir(benchmark)
-        #    # Make the rundir if it does not exist
-        #    hammer_utils.mkdir_p(bmark_run_dir)
-        #    self.run_executable(args + [benchmark], cwd=bmark_run_dir)
-        ###################################################################
+        # TODO(johnwright) We should optionally parallelize this in the future.
+        for benchmark in self.benchmarks:
+            bmark_run_dir = self.benchmark_run_dir(benchmark)
+            # Make the rundir if it does not exist
+            hammer_utils.mkdir_p(bmark_run_dir)
+            self.run_executable(args + [benchmark], cwd=bmark_run_dir)
+        ##################################################################
 
         if self.benchmarks == []:
             self.run_executable(args, cwd=self.run_dir)
