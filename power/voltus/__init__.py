@@ -133,14 +133,26 @@ class Voltus(HammerPowerTool, CadenceTool):
         tb_dut = self.get_setting("power.inputs.tb_dut")
         tb_scope = "{}/{}".format(tb_name, tb_dut)
 
+        # TODO: These times should be either auto calculated/read from the inputs or moved into the same structure as a tuple
+        start_times = self.get_setting("power.inputs.start_times")
+        end_times = self.get_setting("power.inputs.end_times")
+
+
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
-        for vcd_path in self.get_setting("power.inputs.waveforms"):
-            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start 0 -end 10000 -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope))
+        for vcd_path, vcd_stime, vcd_etime in zip(self.get_setting("power.inputs.waveforms"), start_times, end_times):
+            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {stime} -end {etime} -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope, stime=vcd_stime, etime=vcd_etime))
             # TODO (daniel) make this change name based on input vector file
-            verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
             verbose_append("report_power -out_dir activePower.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
+            verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
 
+        verbose_append("set_db power_method dynamic")
+        for saif_path, saif_stime, saif_etime  in zip(self.get_setting("power.inputs.saifs"), start_times, end_times):
+            length = float(saif_etime)-float(saif_stime)
+            verbose_append("set_dynamic_power_simulation -resolution {step}ns -period {etime}ns".format(step=length/1000, etime=length))
+            verbose_append("read_activity_file -reset -format SAIF {SAIF_PATH} -start {stime} -end {etime} -scope {TESTBENCH}".format(SAIF_PATH=saif_path, TESTBENCH=tb_scope, stime=saif_stime, etime=saif_etime))
+            # TODO (daniel) make this change name based on input vector file
+            verbose_append("report_power -out_dir activePower.{SAIF_FILE}".format(SAIF_FILE=".".join(saif_path.split('/')[-2:])))
         return True
 
     def active_rail(self) -> bool:
