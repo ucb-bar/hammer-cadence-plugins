@@ -41,7 +41,6 @@ import shutil
 ############################################################
 
 # TODO compiler flags for c/cpp files
-# TODO benchmark tests
 # TODO force_regs function
 # TODO verify gate level works
 # TODO verify timing annotated
@@ -62,11 +61,9 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         return self.make_steps_from_methods(
             [self.write_gl_files, self.run_xrun, self.run_simulation])
 
-    def benchmark_run_dir(self, bmark_path: str) -> str:
-        """Generate a benchmark run directory."""
-        # TODO(ucb-bar/hammer#462) this method should be passed the name of the bmark rather than its path
-        bmark = os.path.basename(bmark_path)
-        return os.path.join(self.run_dir, bmark)
+    def benchmark_stub(self, bmark_path: str) -> str:
+        """Returns stub for benchmark from path (i.e. basename minus ext)"""
+        return os.path.splitext(os.path.basename(bmark_path))[0]
 
     @property
     def force_regs_file_path(self) -> str:
@@ -83,11 +80,6 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
     @property
     def simulator_work_dir(self) -> str:
         return os.path.join(self.run_dir, "xcelium.d")
-
-    @property
-    def simulator_executable_path(self) -> str:
-        return os.path.join(self.run_dir, self.simulator_work_dir,
-                            self.simulator_snapshot_name + '.d')
 
     @property
     def run_tcl_path(self) -> str:
@@ -154,7 +146,6 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         ###################################################################
         #access_tab_filename = self.access_tab_file_path
         ###################################################################
-        tb_name = self.get_setting("sim.inputs.tb_name")
 
         # Build args
         args = [xrun_bin, "-64bit"]
@@ -175,7 +166,7 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         # Add in all input files
         args.extend(input_files)
 
-        # Note: we always want to get the verilog models because most real designs will instantate a few
+        # Note: we always want to get the verilog models
         # tech-specific cells in the source RTL (IO cells, clock gaters, etc.)
         args.extend(self.get_verilog_models())
 
@@ -200,16 +191,31 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
             # Append sourcing of force regs tcl
             self.append("source " + self.force_regs_file_path)
 
-        args.extend(["-top", tb_name])
+        # Set test bench as top
+        args.extend(["-top", self.get_setting("sim.inputs.tb_name")])
 
+        # Just elaborate and generate snapshot of simulation
         args.extend(['-elaborate'])
-        args.extend(['-snapshot', self.simulator_snapshot_name])
 
         HammerVLSILogging.enable_colour = False
         HammerVLSILogging.enable_tag = False
 
-        # Generate a simulator
-        self.run_executable(args, cwd=self.run_dir)
+        # Generate simulator
+        if len(self.benchmarks) > 0:
+            for i, benchmark in enumerate(self.benchmarks):
+                if not os.path.isfile(benchmark):
+                    self.logger.error(
+                        "benchmark not found as expected at {0}".format(
+                            benchmark))
+                    return False
+                self.run_executable(
+                    args +
+                    [benchmark, "-xmuid",
+                     self.benchmark_stub(benchmark)],
+                    cwd=self.run_dir)
+        else:
+            args.extend(["-xmuid", self.get_setting("sim.inputs.tb_name")])
+            self.run_executable(args, cwd=self.run_dir)
 
         # Create run tcl for simulation step
         self.append("run")
@@ -220,9 +226,8 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         HammerVLSILogging.enable_colour = True
         HammerVLSILogging.enable_tag = True
 
-        return os.path.exists(
-            self.simulator_executable_path) and os.path.exists(
-                self.run_tcl_path)
+        return os.path.exists(self.simulator_work_dir) and os.path.exists(
+            self.run_tcl_path)
 
     def run_simulation(self) -> bool:
         if not self.get_setting("sim.inputs.execute_sim"):
@@ -231,16 +236,9 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
             )
             return True
 
-        ###################################################################
-        #for benchmark in self.benchmarks:
-        #    if not os.path.isfile(benchmark):
-        #      self.logger.error("benchmark not found as expected at {0}".format(vcs_bin))
-        #      return False
-        ###################################################################
-
         # Setup simulation arguments
         args = [self.get_setting("sim.xcelium.xcelium_bin")]
-        args.extend(["-r", self.simulator_snapshot_name])
+        args.extend(["-R"])
 
         # Execution flags
         exec_flags_prepend = self.get_setting(
@@ -256,16 +254,14 @@ class Xcelium(HammerSimTool, CadenceTool, TCLTool):
         HammerVLSILogging.enable_colour = False
         HammerVLSILogging.enable_tag = False
 
-        ###################################################################
-        # TODO(johnwright) We should optionally parallelize this in the future.
-        for benchmark in self.benchmarks:
-            bmark_run_dir = self.benchmark_run_dir(benchmark)
-            # Make the rundir if it does not exist
-            hammer_utils.mkdir_p(bmark_run_dir)
-            self.run_executable(args + [benchmark], cwd=bmark_run_dir)
-        ##################################################################
-
-        if self.benchmarks == []:
+        # Replay snapshot/s
+        if len(self.benchmarks) > 0:
+            for i, benchmark in enumerate(self.benchmarks):
+                self.run_executable(
+                    args + ["-xmuid", self.benchmark_stub(benchmark)],
+                    cwd=self.run_dir)
+        else:
+            args.extend(["-xmuid", self.get_setting("sim.inputs.tb_name")])
             self.run_executable(args, cwd=self.run_dir)
 
         HammerVLSILogging.enable_colour = True
