@@ -164,18 +164,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             # Symlink the database to latest for open_chip script later.
             self.verbose_append("ln -sfn {last} latest".format(last=last))
 
-        # Create open_chip script pointing to post_<last step>.
-        with open(self.open_chip_tcl, "w") as f:
-            f.write("read_db latest")
-
-        with open(self.open_chip_script, "w") as f:
-            f.write("""#!/bin/bash
-        cd {run_dir}
-        source enter
-        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
-                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
-        os.chmod(self.open_chip_script, 0o755)
-
         return self.run_innovus()
 
     def get_tool_hooks(self) -> List[HammerToolHookAction]:
@@ -649,9 +637,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Write SDF
         self.write_sdf()
 
-        # Make sure that generated-scripts exists.
-        os.makedirs(self.generated_scripts_dir, exist_ok=True)
-
         return True
 
     @property
@@ -686,6 +671,21 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         par_tcl_filename = os.path.join(self.run_dir, "par.tcl")
         with open(par_tcl_filename, "w") as f:
             f.write("\n".join(self.output))
+
+        # Make sure that generated-scripts exists.
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
+
+        # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
+        with open(self.open_chip_tcl, "w") as f:
+            f.write("read_db latest")
+
+        with open(self.open_chip_script, "w") as f:
+            f.write("""#!/bin/bash
+        cd {run_dir}
+        source enter
+        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
+                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
+        os.chmod(self.open_chip_script, 0o755)
 
         # Build args.
         args = [
@@ -724,6 +724,14 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         elif floorplan_mode == "auto":
             output.append("# Using auto-generated floorplan")
             output.append("plan_design")
+            spacing = self.get_setting("par.blockage_spacing")
+            bot_layer = self.get_stackup().get_metal_by_index(1).name
+            top_layer = self.get_setting("par.blockage_spacing_top_layer")
+            if top_layer is not None:
+                output.append("create_place_halo -all_blocks -halo_deltas {{{s} {s} {s} {s}}} -snap_to_site".format(
+                    s=spacing))
+                output.append("create_route_halo -all_blocks -bottom_layer {b} -space {s} -top_layer {t}".format(
+                    b=bot_layer, t=top_layer, s=spacing))
         else:
             if floorplan_mode != "blank":
                 self.logger.error("Invalid floorplan_mode {mode}. Using blank floorplan.".format(mode=floorplan_mode))
@@ -775,6 +783,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         )
 
         floorplan_constraints = self.get_placement_constraints()
+        global_top_layer = self.get_setting("par.blockage_spacing_top_layer")
 
         ############## Actually generate the constraints ################
         for constraint in floorplan_constraints:
@@ -827,11 +836,17 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     ))
                     spacing = self.get_setting("par.blockage_spacing")
                     if constraint.top_layer is not None:
+                        current_top_layer = constraint.top_layer
+                    elif global_top_layer is not None:
+                        current_top_layer = global_top_layer
+                    else:
+                        current_top_layer = None
+                    if current_top_layer is not None:
                         bot_layer = self.get_stackup().get_metal_by_index(1).name
                         output.append("create_place_halo -insts {inst} -halo_deltas {{{s} {s} {s} {s}}} -snap_to_site".format(
                             inst=new_path, s=spacing))
                         output.append("create_route_halo -bottom_layer {b} -space {s} -top_layer {t} -inst {inst}".format(
-                            inst=new_path, b=bot_layer, t=constraint.top_layer, s=spacing))
+                            inst=new_path, b=bot_layer, t=current_top_layer, s=spacing))
                 elif constraint.type == PlacementConstraintType.Obstruction:
                     obs_types = get_or_else(constraint.obs_types, [])  # type: List[ObstructionType]
                     if ObstructionType.Place in obs_types:
