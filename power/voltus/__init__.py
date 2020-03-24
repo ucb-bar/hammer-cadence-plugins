@@ -66,8 +66,6 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         #verbose_append("read_power_domain -cpf {CPF}".format(CPF=power_spec))
 
-        ##TODO(daniel): add additional options
-        #verbose_append("read_spef {SPEF}".format(SPEF=self.spef_file))
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
         innovus_db = self.get_setting("power.inputs.database")
@@ -89,9 +87,17 @@ class Voltus(HammerPowerTool, CadenceTool):
         for corner in corners:
             if corner.type is MMMCCornerType.Setup:
                 setup_view_name = "{cname}.setup_view".format(cname=corner.name)
+                setup_spef_name = "{cname}.setup_rc".format(cname=corner.name)
             elif corner.type is MMMCCornerType.Hold:
                 hold_view_name = "{cname}.hold_view".format(cname=corner.name)
+                hold_spef_name = "{cname}.hold_rc".format(cname=corner.name)
         verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name))
+
+        ##TODO(daniel): add additional options
+        verbose_append("read_spef {{ {spefs} }} -rc_corner {{ {corners} }}".format(
+          spefs=" ".join(self.get_setting("power.inputs.spef_files")),
+          corners=" ".join([setup_spef_name, hold_spef_name])))
+
 
         return True
 
@@ -163,7 +169,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         """Close out the power script and run Voltus"""
         # Quit Voltus
-        verbose_append("quit")
+        verbose_append("exit")
 
         # Create power analysis script
         power_tcl_filename = os.path.join(self.run_dir, "power.tcl")
