@@ -371,10 +371,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         pin_assignments = self.get_pin_assignments()
         self.verbose_append("set_db assign_pins_edit_in_batch true")
+
+        promoted_pins = []
         for pin in pin_assignments:
             if pin.preplaced:
                 # First set promoted pins
                 self.verbose_append("set_promoted_macro_pin -pins {{ {p} }}".format(p=pin.pins))
+                promoted_pins.extend(pin.pins.split())
             else:
                 # TODO: Do we need pin blockages for our layers?
                 # Seems like we will only need special pin blockages if the vias are larger than the straps
@@ -430,6 +433,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 ]
 
                 self.verbose_append(" ".join(cmd))
+
+        for pin in promoted_pins:
+            self.verbose_append("assign_io_pins -move_fixed_pin -pins [get_db [get_db pins -if {{.name == {p} }}] .net.name]".format(p=pin))
+
         self.verbose_append("set_db assign_pins_edit_in_batch false")
         return True
 
@@ -448,6 +455,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def clock_tree(self) -> bool:
         """Setup and route a clock tree for clock nets."""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append('''
+            flatten_ilm
+            set_interactive_constraint_modes [all_constraint_modes]
+            source clock_constraints_fragment.sdc
+            source pin_constraints_fragment.sdc
+            ''', clean=True)
         if len(self.get_clock_ports()) > 0:
             # Ignore clock tree when there are no clocks
             self.verbose_append("create_clock_tree_spec")
@@ -456,6 +470,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 self.verbose_append("ccopt_design -hold -report_dir hammer_cts_debug -report_prefix hammer_cts")
             else:
                 self.verbose_append("clock_design")
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("unflatten_ilm")
         return True
 
     def add_fillers(self) -> bool:
@@ -477,12 +493,16 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def route_design(self) -> bool:
         """Route the design."""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("flatten_ilm")
         self.verbose_append("route_design")
         return True
 
     def opt_design(self) -> bool:
         """Post-route optimization and fix setup & hold time violations."""
         self.verbose_append("opt_design -post_route -setup -hold")
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("unflatten_ilm")
         return True
 
     def assemble_design(self) -> bool:
@@ -555,6 +575,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def write_sdf(self) -> bool:
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("flatten_ilm")
 
         # Output the Standard Delay Format File for use in timing annotated gate level simulations
         self.verbose_append("write_sdf {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
