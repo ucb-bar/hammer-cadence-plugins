@@ -276,6 +276,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
         tie_hi_cell = tie_hi_cells[0].name[0]
         tie_lo_cell = tie_lo_cells[0].name[0]
 
+        # Limit "no delay description exists" warnings
+        self.verbose_append("set_db message:WSDF-201 .max_print 20")
         self.verbose_append("set_db use_tiehilo_for_const duplicate")
         self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
         return True
@@ -345,13 +347,13 @@ class Genus(HammerSynthesisTool, CadenceTool):
                 view_name = "{cname}.setup_view".format(cname=corner.name)
         verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
 
+        verbose_append("write_sdf > {run_dir}/{top}.mapped.sdf".format(run_dir=self.run_dir, top=top))
+
         # We just get "Cannot trace ILM directory. Data corrupted."
         # -hierarchical needs to be used for non-leaf modules
         is_hier = self.hierarchical_mode != HierarchicalMode.Leaf # self.hierarchical_mode != HierarchicalMode.Flat
         verbose_append("write_design -innovus {hier_flag} -gzip_files {top}".format(
             hier_flag="-hierarchical" if is_hier else "", top=top))
-
-        verbose_append("write_sdf > {run_dir}/{top}.mapped.sdf".format(run_dir=self.run_dir, top=top))
 
         self.ran_write_outputs = True
 
