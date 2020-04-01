@@ -372,7 +372,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         pin_assignments = self.get_pin_assignments()
         self.verbose_append("set_db assign_pins_edit_in_batch true")
 
-        promoted_pins = []
+        promoted_pins = []  # type: List[str]
         for pin in pin_assignments:
             if pin.preplaced:
                 # First set promoted pins
@@ -434,6 +434,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
                 self.verbose_append(" ".join(cmd))
 
+        # In case the * wildcard is used after preplaced pins, this will place promoted pins correctly.
+        # Innovus errors instead of warns if the name matching does not work (e.g. bad wildcards).
         for pin in promoted_pins:
             self.verbose_append("assign_io_pins -move_fixed_pin -pins [get_db [get_db pins -if {{.name == {p} }}] .net.name]".format(p=pin))
 
