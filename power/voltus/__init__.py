@@ -53,19 +53,6 @@ class Voltus(HammerPowerTool, CadenceTool):
     def init_design(self) -> bool:
         verbose_append = self.verbose_append
 
-        # Read LEF layouts.
-        #lef_files = self.technology.read_libs([
-        #    hammer_tech.filters.lef_filter
-        #], hammer_tech.HammerTechnologyUtils.to_plain_item)
-        #verbose_append("read_lib -lef {{  {files}  }}".format(files=" ".join(lef_files)))
-
-        ##TODO(daniel): support hammer generated cpf
-        #power_spec = self.get_setting("power.inputs.power_spec")
-        #if not os.path.isfile(power_spec):
-        #    raise ValueError("Power spec %s not found" % (power_spec)) # better error?
-
-        #verbose_append("read_power_domain -cpf {CPF}".format(CPF=power_spec))
-
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
         innovus_db = self.get_setting("power.inputs.database")
@@ -95,7 +82,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         ##TODO(daniel): add additional options
         verbose_append("read_spef {{ {spefs} }} -rc_corner {{ {corners} }}".format(
-          spefs=" ".join(self.get_setting("power.inputs.spef_files")),
+          spefs=" ".join(self.spefs),
           corners=" ".join([setup_spef_name, hold_spef_name])))
 
 
@@ -146,14 +133,14 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
-        for vcd_path, vcd_stime, vcd_etime in zip(self.get_setting("power.inputs.waveforms"), start_times, end_times):
+        for vcd_path, vcd_stime, vcd_etime in zip(self.waveforms, start_times, end_times):
             verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {stime} -end {etime} -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope, stime=vcd_stime, etime=vcd_etime))
             # TODO (daniel) make this change name based on input vector file
             verbose_append("report_power -out_dir activePower.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
             verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
 
         verbose_append("set_db power_method dynamic")
-        for saif_path, saif_stime, saif_etime  in zip(self.get_setting("power.inputs.saifs"), start_times, end_times):
+        for saif_path, saif_stime, saif_etime  in zip(self.saifs, start_times, end_times):
             length = float(saif_etime)-float(saif_stime)
             verbose_append("set_dynamic_power_simulation -resolution {step}ns -period {etime}ns".format(step=length/1000, etime=length))
             verbose_append("read_activity_file -reset -format SAIF {SAIF_PATH} -start {stime} -end {etime} -scope {TESTBENCH}".format(SAIF_PATH=saif_path, TESTBENCH=tb_scope, stime=saif_stime, etime=saif_etime))
