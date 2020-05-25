@@ -115,12 +115,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return os.path.join(self.run_dir, "{top}.par.sdf".format(top=self.top_module))
 
     @property
-    def output_spef_paths(self) -> str:
+    def output_spef_paths(self) -> List[str]:
         if self.get_mmmc_corners():
             return [os.path.join(self.run_dir, "{top}.setup.par.spef".format(top=self.top_module)),
                 os.path.join(self.run_dir, "{top}.hold.par.spef".format(top=self.top_module))]
         else:
-            return os.path.join(self.run_dir, "{top}.par.spef".format(top=self.top_module))
+            return [os.path.join(self.run_dir, "{top}.par.spef".format(top=self.top_module))]
 
     @property
     def env_vars(self) -> Dict[str, str]:
