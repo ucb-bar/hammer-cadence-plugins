@@ -178,18 +178,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             # Symlink the database to latest for open_chip script later.
             self.verbose_append("ln -sfn {last} latest".format(last=last))
 
-        # Create open_chip script pointing to post_<last step>.
-        with open(self.open_chip_tcl, "w") as f:
-            f.write("read_db latest")
-
-        with open(self.open_chip_script, "w") as f:
-            f.write("""#!/bin/bash
-        cd {run_dir}
-        source enter
-        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
-                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
-        os.chmod(self.open_chip_script, 0o755)
-
         return self.run_innovus()
 
     def get_tool_hooks(self) -> List[HammerToolHookAction]:
@@ -397,10 +385,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         pin_assignments = self.get_pin_assignments()
         self.verbose_append("set_db assign_pins_edit_in_batch true")
+
+        promoted_pins = []  # type: List[str]
         for pin in pin_assignments:
             if pin.preplaced:
                 # First set promoted pins
                 self.verbose_append("set_promoted_macro_pin -pins {{ {p} }}".format(p=pin.pins))
+                promoted_pins.extend(pin.pins.split())
             else:
                 # TODO: Do we need pin blockages for our layers?
                 # Seems like we will only need special pin blockages if the vias are larger than the straps
@@ -456,6 +447,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 ]
 
                 self.verbose_append(" ".join(cmd))
+
+        # In case the * wildcard is used after preplaced pins, this will place promoted pins correctly.
+        # Innovus errors instead of warns if the name matching does not work (e.g. bad wildcards).
+        for pin in promoted_pins:
+            self.verbose_append("assign_io_pins -move_fixed_pin -pins [get_db [get_db pins -if {{.name == {p} }}] .net.name]".format(p=pin))
+
         self.verbose_append("set_db assign_pins_edit_in_batch false")
         return True
 
@@ -474,6 +471,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def clock_tree(self) -> bool:
         """Setup and route a clock tree for clock nets."""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append('''
+            flatten_ilm
+            set_interactive_constraint_modes [all_constraint_modes]
+            source clock_constraints_fragment.sdc
+            source pin_constraints_fragment.sdc
+            ''', clean=True)
         if len(self.get_clock_ports()) > 0:
             # Ignore clock tree when there are no clocks
             self.verbose_append("create_clock_tree_spec")
@@ -482,6 +486,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 self.verbose_append("ccopt_design -hold -report_dir hammer_cts_debug -report_prefix hammer_cts")
             else:
                 self.verbose_append("clock_design")
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("unflatten_ilm")
         return True
 
     def add_fillers(self) -> bool:
@@ -503,12 +509,16 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def route_design(self) -> bool:
         """Route the design."""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("flatten_ilm")
         self.verbose_append("route_design")
         return True
 
     def opt_design(self) -> bool:
         """Post-route optimization and fix setup & hold time violations."""
         self.verbose_append("opt_design -post_route -setup -hold")
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("unflatten_ilm")
         return True
 
     def assemble_design(self) -> bool:
@@ -581,6 +591,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def write_sdf(self) -> bool:
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("flatten_ilm")
 
         # Output the Standard Delay Format File for use in timing annotated gate level simulations
         self.verbose_append("write_sdf {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
@@ -724,6 +736,21 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         with open(par_tcl_filename, "w") as f:
             f.write("\n".join(self.output))
 
+        # Make sure that generated-scripts exists.
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
+
+        # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
+        with open(self.open_chip_tcl, "w") as f:
+            f.write("read_db latest")
+
+        with open(self.open_chip_script, "w") as f:
+            f.write("""#!/bin/bash
+        cd {run_dir}
+        source enter
+        $INNOVUS_BIN -common_ui -win -files {open_chip_tcl}
+                """.format(run_dir=self.run_dir, open_chip_tcl=self.open_chip_tcl))
+        os.chmod(self.open_chip_script, 0o755)
+
         # Build args.
         args = [
             self.get_setting("par.innovus.innovus_bin"),
@@ -761,6 +788,14 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         elif floorplan_mode == "auto":
             output.append("# Using auto-generated floorplan")
             output.append("plan_design")
+            spacing = self.get_setting("par.blockage_spacing")
+            bot_layer = self.get_stackup().get_metal_by_index(1).name
+            top_layer = self.get_setting("par.blockage_spacing_top_layer")
+            if top_layer is not None:
+                output.append("create_place_halo -all_blocks -halo_deltas {{{s} {s} {s} {s}}} -snap_to_site".format(
+                    s=spacing))
+                output.append("create_route_halo -all_blocks -bottom_layer {b} -space {s} -top_layer {t}".format(
+                    b=bot_layer, t=top_layer, s=spacing))
         else:
             if floorplan_mode != "blank":
                 self.logger.error("Invalid floorplan_mode {mode}. Using blank floorplan.".format(mode=floorplan_mode))
@@ -812,6 +847,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         )
 
         floorplan_constraints = self.get_placement_constraints()
+        global_top_layer = self.get_setting("par.blockage_spacing_top_layer")
 
         ############## Actually generate the constraints ################
         for constraint in floorplan_constraints:
@@ -864,11 +900,17 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     ))
                     spacing = self.get_setting("par.blockage_spacing")
                     if constraint.top_layer is not None:
+                        current_top_layer = constraint.top_layer
+                    elif global_top_layer is not None:
+                        current_top_layer = global_top_layer
+                    else:
+                        current_top_layer = None
+                    if current_top_layer is not None:
                         bot_layer = self.get_stackup().get_metal_by_index(1).name
                         output.append("create_place_halo -insts {inst} -halo_deltas {{{s} {s} {s} {s}}} -snap_to_site".format(
                             inst=new_path, s=spacing))
                         output.append("create_route_halo -bottom_layer {b} -space {s} -top_layer {t} -inst {inst}".format(
-                            inst=new_path, b=bot_layer, t=constraint.top_layer, s=spacing))
+                            inst=new_path, b=bot_layer, t=current_top_layer, s=spacing))
                 elif constraint.type == PlacementConstraintType.Obstruction:
                     obs_types = get_or_else(constraint.obs_types, [])  # type: List[ObstructionType]
                     if ObstructionType.Place in obs_types:
