@@ -15,7 +15,7 @@ import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
 from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, HammerToolHookAction, \
-    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint
+    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from hammer_tech import RoutingDirection, Metal
@@ -35,6 +35,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         outputs["par.outputs.seq_cells"] = self.output_seq_cells
         outputs["par.outputs.all_regs"] = self.output_all_regs
         outputs["par.outputs.sdf_file"] = self.output_sdf_path
+        outputs["par.outputs.spef_files"] = self.output_spef_paths
         return outputs
 
     def fill_outputs(self) -> bool:
@@ -86,6 +87,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         if not os.path.isfile(self.output_sdf_path):
             raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
         self.sdf_file = self.output_sdf_path
+
+        for spef_path in self.output_spef_paths:
+            if not os.path.isfile(spef_path):
+                raise ValueError("Output SPEF %s not found" % (spef_path))
+            self.spef_files = self.output_spef_paths
         return True
 
     @property
@@ -107,6 +113,14 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     @property
     def output_sdf_path(self) -> str:
         return os.path.join(self.run_dir, "{top}.par.sdf".format(top=self.top_module))
+
+    @property
+    def output_spef_paths(self) -> List[str]:
+        if self.get_mmmc_corners():
+            return [os.path.join(self.run_dir, "{top}.setup.par.spef".format(top=self.top_module)),
+                os.path.join(self.run_dir, "{top}.hold.par.spef".format(top=self.top_module))]
+        else:
+            return [os.path.join(self.run_dir, "{top}.par.spef".format(top=self.top_module))]
 
     @property
     def env_vars(self) -> Dict[str, str]:
@@ -585,6 +599,26 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         return True
 
+    def write_spefs(self) -> bool:
+        # Output a SPEF file that contains the parasitic extraction results
+        self.verbose_append("set_db extract_rc_coupled true")
+        self.verbose_append("extract_rc")
+        corners = self.get_mmmc_corners()
+        if corners:
+            for corner in corners:
+                if corner.type is MMMCCornerType.Setup:
+                    setup_corner_name = "{cname}.setup_rc".format(cname=corner.name)
+                elif corner.type is MMMCCornerType.Hold:
+                    hold_corner_name = "{cname}.hold_rc".format(cname=corner.name)
+            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.setup.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=setup_corner_name))
+            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name))
+        else:
+            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.par.spef".format(run_dir=self.run_dir, top=self.top_module))
+    
+        return True
+
+
+
     @property
     def output_innovus_lib_name(self) -> str:
         return "{top}_FINAL".format(top=self.top_module)
@@ -624,7 +658,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         puts $write_regs_ir "  \],"
         puts $write_regs_ir {   "reg_paths" : [}
 
-        set regs [get_db [all_registers -edge_triggered -output_pins] .name]
+        set regs [get_db [get_db [all_registers -edge_triggered -output_pins] -if .direction==out] .name]
 
         set len [llength $regs]
 
@@ -660,6 +694,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Write SDF
         self.write_sdf()
+
+        # Write SPEF
+        self.write_spefs()
+
+        # Make sure that generated-scripts exists.
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
         return True
 

@@ -311,7 +311,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         puts $write_regs_ir "  \],"
         puts $write_regs_ir {   "reg_paths" : [}
 
-        set regs [get_db [all_registers -edge_triggered -output_pins] .name]
+        set regs [get_db [get_db [all_registers -edge_triggered -output_pins] -if .direction==out] .name]
 
         set len [llength $regs]
 
