@@ -40,7 +40,7 @@ class Voltus(HammerPowerTool, CadenceTool):
             self.init_technology,
             self.init_design,
             self.static_power,
-            self.static_rail,
+            #self.static_rail,
             self.active_power,
             self.active_rail,
             self.run_voltus
@@ -101,19 +101,15 @@ class Voltus(HammerPowerTool, CadenceTool):
     def static_rail(self) -> bool:
         verbose_append = self.verbose_append
 
-        # TODO (daniel) change to struct
-        if self.get_setting("power.inputs.static_rail"):
-            # TODO (daniel) add more setting parameters
-            verbose_append("set_rail_anaylsis_config -analysis_view VIEW -method era_static -accuracy xd -extraction_techfile QRC_TECHFILE")
-            verbose_append("set_power_data -format current {FILE NAMES}")
-            verbose_append("report_rail -output_dir staticRailReports -type domain AO")
+        # TODO (daniel) add more setting parameters
+        verbose_append("set_rail_anaylsis_config -analysis_view VIEW -method era_static -accuracy xd -extraction_techfile QRC_TECHFILE")
+        verbose_append("set_power_data -format current {FILE NAMES}")
+        verbose_append("report_rail -output_dir staticRailReports -type domain AO")
 
         return True
 
     def active_power(self) -> bool:
         verbose_append = self.verbose_append
-
-        #active_power_mode = self.get_setting("power.inputs.active_power_mode")
 
         # Active Vectorless Power Analysis
         verbose_append("set_db power_method dynamic_vectorless")
