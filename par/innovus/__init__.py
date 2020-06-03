@@ -68,13 +68,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.output_sim_netlist = self.output_sim_netlist_filename
         self.hcells_list = []
 
-        if not os.path.isfile(self.all_regs_path):
-            raise ValueError("Output find_regs.json %s not found" % (self.all_regs_path))
+        if not os.path.isfile(self.all_cells_path):
+            raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
+        self.output_seq_cells = self.all_cells_path
 
-        with open(self.all_regs_path, "r") as f:
-            j = json.load(f)
-            self.output_seq_cells = j["seq_cells"]
-            reg_paths = j["reg_paths"]
+        if not os.path.isfile(self.all_regs_path):
+            raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
+        self.output_all_regs = self.all_regs_path
+
+        # Post-process the all_regs list here to avoid having too much logic in TCL
+        with open(self.all_regs_path, "r+") as f:
+            reg_paths = json.load(f)
+            assert isinstance(reg_paths, List[str]), "Output find_regs_paths.json should be a json list of strings"
             for i in range(len(reg_paths)):
                 split = reg_paths[i].split("/")
                 if split[-2][-1] == "]":
@@ -82,7 +87,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
                 else:
                     reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
-            self.output_all_regs = reg_paths
+            f.seek(0) # Move to beginning to rewrite file
+            json.dump(reg_paths, f) # Elide the truncation because we are always increasing file size
 
         if not os.path.isfile(self.output_sdf_path):
             raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
@@ -108,7 +114,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     @property
     def all_regs_path(self) -> str:
-        return os.path.join(self.run_dir, "find_regs.json")
+        return os.path.join(self.run_dir, "find_regs_paths.json")
+
+    @property
+    def all_cells_path(self) -> str:
+        return os.path.join(self.run_dir, "find_regs_cells.json")
 
     @property
     def output_sdf_path(self) -> str:
