@@ -14,7 +14,7 @@ import errno
 import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, HammerToolHookAction, \
+from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType
 from hammer_logging import HammerVLSILogging
 import hammer_tech
@@ -22,6 +22,10 @@ from hammer_tech import RoutingDirection, Metal
 import specialcells
 from specialcells import CellType, SpecialCell
 from decimal import Decimal
+
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../tool"))
+from tool import CadenceTool
 
 # Notes: camelCase commands are the old syntax (deprecated)
 # snake_case commands are the new/common UI syntax.
@@ -647,47 +651,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
-        self.append('''
-        set write_regs_ir "./find_regs.json"
-        set write_regs_ir [open $write_regs_ir "w"]
-        puts $write_regs_ir "\{"
-        puts $write_regs_ir {   "seq_cells" : [}
-
-        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
-
-        set len [llength $refs]
-
-        for {set i 0} {$i < [llength $refs]} {incr i} {
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\""
-            } else {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\","
-            }
-        }
-
-        puts $write_regs_ir "  \],"
-        puts $write_regs_ir {   "reg_paths" : [}
-
-        set regs [get_db [get_db [all_registers -edge_triggered -output_pins] -if .direction==out] .name]
-
-        set len [llength $regs]
-
-        for {set i 0} {$i < [llength $regs]} {incr i} {
-            #regsub -all {/} [lindex $regs $i] . myreg
-            set myreg [lindex $regs $i]
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"$myreg\\""
-            } else {
-                puts $write_regs_ir "    \\"$myreg\\","
-            }
-        }
-
-        puts $write_regs_ir "  \]"
-
-        puts $write_regs_ir "\}"
-        close $write_regs_ir
-        ''')
-
+        self.append(self.write_regs_tcl())
         return True
 
     def write_design(self) -> bool:

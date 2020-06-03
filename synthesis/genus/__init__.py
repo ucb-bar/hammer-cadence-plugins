@@ -7,7 +7,6 @@
 
 from hammer_vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
 from hammer_utils import VerilogUtils
-from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
 from hammer_logging import HammerVLSILogging
 from hammer_vlsi import MMMCCornerType
@@ -20,6 +19,10 @@ from specialcells import CellType, SpecialCell
 
 import os
 import json
+
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../tool"))
+from tool import CadenceTool
 
 
 class Genus(HammerSynthesisTool, CadenceTool):
@@ -290,47 +293,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
-        self.append('''
-        set write_regs_ir "./find_regs.json"
-        set write_regs_ir [open $write_regs_ir "w"]
-        puts $write_regs_ir "\{"
-        puts $write_regs_ir {   "seq_cells" : [}
-
-        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
-
-        set len [llength $refs]
-
-        for {set i 0} {$i < [llength $refs]} {incr i} {
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\""
-            } else {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\","
-            }
-        }
-
-        puts $write_regs_ir "  \],"
-        puts $write_regs_ir {   "reg_paths" : [}
-
-        set regs [get_db [get_db [all_registers -edge_triggered -output_pins] -if .direction==out] .name]
-
-        set len [llength $regs]
-
-        for {set i 0} {$i < [llength $regs]} {incr i} {
-            #regsub -all {/} [lindex $regs $i] . myreg
-            set myreg [lindex $regs $i]
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"$myreg\\""
-            } else {
-                puts $write_regs_ir "    \\"$myreg\\","
-            }
-        }
-
-        puts $write_regs_ir "  \]"
-
-        puts $write_regs_ir "\}"
-        close $write_regs_ir
-        ''')
-
+        self.append(self.write_regs_tcl())
         return True
 
     def write_outputs(self) -> bool:
