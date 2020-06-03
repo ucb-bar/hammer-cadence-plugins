@@ -11,7 +11,6 @@ from itertools import product
 
 import os
 import errno
-import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
 from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
@@ -80,19 +79,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
         self.output_all_regs = self.all_regs_path
 
-        # Post-process the all_regs list here to avoid having too much logic in TCL
-        with open(self.all_regs_path, "r+") as f:
-            reg_paths = json.load(f)
-            assert isinstance(reg_paths, List[str]), "Output find_regs_paths.json should be a json list of strings"
-            for i in range(len(reg_paths)):
-                split = reg_paths[i].split("/")
-                if split[-2][-1] == "]":
-                    split[-2] = "\\" + split[-2]
-                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
-                else:
-                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
-            f.seek(0) # Move to beginning to rewrite file
-            json.dump(reg_paths, f) # Elide the truncation because we are always increasing file size
+        if not self.process_reg_paths(self.all_regs_path):
+            self.logger.error("Failed to process all register paths")
 
         if not os.path.isfile(self.output_sdf_path):
             raise ValueError("Output SDF %s not found" % (self.output_sdf_path))

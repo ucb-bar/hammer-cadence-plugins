@@ -1,6 +1,7 @@
 from functools import reduce
 from typing import List, Optional, Dict
 import os
+import json
 
 from hammer_vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool
 from hammer_vlsi.constraints import MMMCCorner
@@ -334,3 +335,18 @@ if {{ {get_db_str} ne "" }} {{
         close $write_regs_ir
         '''
 
+    def process_reg_paths(self, path: str) -> bool:
+        # Post-process the all_regs list here to avoid having too much logic in TCL
+        with open(path, "r+") as f:
+            reg_paths = json.load(f)
+            assert isinstance(reg_paths, List[str]), "Output find_regs_paths.json should be a json list of strings"
+            for i in range(len(reg_paths)):
+                split = reg_paths[i].split("/")
+                if split[-2][-1] == "]":
+                    split[-2] = "\\" + split[-2]
+                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
+                else:
+                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
+            f.seek(0) # Move to beginning to rewrite file
+            json.dump(reg_paths, f, indent=2) # Elide the truncation because we are always increasing file size
+        return True
