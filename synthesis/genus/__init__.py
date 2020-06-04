@@ -21,7 +21,7 @@ import os
 import json
 
 import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../tool"))
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
 from tool import CadenceTool
 
 
