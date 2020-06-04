@@ -7,7 +7,6 @@
 
 from hammer_vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
 from hammer_utils import VerilogUtils
-from hammer_vlsi import CadenceTool
 from hammer_vlsi import HammerSynthesisTool
 from hammer_logging import HammerVLSILogging
 from hammer_vlsi import MMMCCornerType
@@ -20,6 +19,10 @@ from specialcells import CellType, SpecialCell
 
 import os
 import json
+
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
+from tool import CadenceTool
 
 
 class Genus(HammerSynthesisTool, CadenceTool):
@@ -44,21 +47,16 @@ class Genus(HammerSynthesisTool, CadenceTool):
             raise ValueError("Output SDC %s not found" % (self.mapped_sdc_path)) # better error?
         self.output_sdc = self.mapped_sdc_path
 
-        if not os.path.isfile(self.mapped_all_regs_path):
-            raise ValueError("Output find_regs.json %s not found" % (self.mapped_all_regs_path))
+        if not os.path.isfile(self.all_cells_path):
+            raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
+        self.output_seq_cells = self.all_cells_path
 
-        with open(self.mapped_all_regs_path, "r") as f:
-            j = json.load(f)
-            self.output_seq_cells = j["seq_cells"]
-            reg_paths = j["reg_paths"]
-            for i in range(len(reg_paths)):
-                split = reg_paths[i].split("/")
-                if split[-2][-1] == "]":
-                    split[-2] = "\\" + split[-2]
-                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
-                else:
-                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
-            self.output_all_regs = reg_paths
+        if not os.path.isfile(self.all_regs_path):
+            raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
+        self.output_all_regs = self.all_regs_path
+
+        if not self.process_reg_paths(self.all_regs_path):
+            self.logger.error("Failed to process all register paths")
 
         if not os.path.isfile(self.output_sdf_path):
             raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
@@ -130,8 +128,12 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return os.path.join(self.run_dir, "{}.mapped.sdc".format(self.top_module))
 
     @property
-    def mapped_all_regs_path(self) -> str:
-        return os.path.join(self.run_dir, "find_regs.json")
+    def all_regs_path(self) -> str:
+        return os.path.join(self.run_dir, "find_regs_paths.json")
+
+    @property
+    def all_cells_path(self) -> str:
+        return os.path.join(self.run_dir, "find_regs_cells.json")
 
     @property
     def output_sdf_path(self) -> str:
@@ -290,47 +292,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
-        self.append('''
-        set write_regs_ir "./find_regs.json"
-        set write_regs_ir [open $write_regs_ir "w"]
-        puts $write_regs_ir "\{"
-        puts $write_regs_ir {   "seq_cells" : [}
-
-        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
-
-        set len [llength $refs]
-
-        for {set i 0} {$i < [llength $refs]} {incr i} {
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\""
-            } else {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\","
-            }
-        }
-
-        puts $write_regs_ir "  \],"
-        puts $write_regs_ir {   "reg_paths" : [}
-
-        set regs [get_db [get_db [all_registers -edge_triggered -output_pins] -if .direction==out] .name]
-
-        set len [llength $regs]
-
-        for {set i 0} {$i < [llength $regs]} {incr i} {
-            #regsub -all {/} [lindex $regs $i] . myreg
-            set myreg [lindex $regs $i]
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"$myreg\\""
-            } else {
-                puts $write_regs_ir "    \\"$myreg\\","
-            }
-        }
-
-        puts $write_regs_ir "  \]"
-
-        puts $write_regs_ir "\}"
-        close $write_regs_ir
-        ''')
-
+        self.append(self.write_regs_tcl())
         return True
 
     def write_outputs(self) -> bool:
