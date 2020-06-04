@@ -1,11 +1,12 @@
 from functools import reduce
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any, Callable
 import os
 import json
 
 from hammer_vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool
-from hammer_vlsi.constraints import MMMCCorner
+from hammer_vlsi.constraints import MMMCCorner, MMMCCornerType
 from hammer_utils import optional_map, add_dicts
+import hammer_tech
 
 class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTool):
     """Mix-in trait with functions useful for Cadence-based tools."""
@@ -339,7 +340,8 @@ if {{ {get_db_str} ne "" }} {{
         # Post-process the all_regs list here to avoid having too much logic in TCL
         with open(path, "r+") as f:
             reg_paths = json.load(f)
-            assert isinstance(reg_paths, List[str]), "Output find_regs_paths.json should be a json list of strings"
+            output_paths = [] #  type: List[Dict[str,str]]
+            assert isinstance(reg_paths, List), "Output find_regs_paths.json should be a json list of strings"
             for i in range(len(reg_paths)):
                 split = reg_paths[i].split("/")
                 if split[-2][-1] == "]":

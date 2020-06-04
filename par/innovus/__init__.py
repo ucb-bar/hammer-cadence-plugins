@@ -452,8 +452,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # In case the * wildcard is used after preplaced pins, this will place promoted pins correctly.
         # Innovus errors instead of warns if the name matching does not work (e.g. bad wildcards).
-        for pin in promoted_pins:
-            self.verbose_append("assign_io_pins -move_fixed_pin -pins [get_db [get_db pins -if {{.name == {p} }}] .net.name]".format(p=pin))
+        for ppin in promoted_pins:
+            self.verbose_append("assign_io_pins -move_fixed_pin -pins [get_db [get_db pins -if {{.name == {p} }}] .net.name]".format(p=ppin))
 
         self.verbose_append("set_db assign_pins_edit_in_batch false")
         return True
@@ -809,7 +809,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         )
 
         floorplan_constraints = self.get_placement_constraints()
-        global_top_layer = self.get_setting("par.blockage_spacing_top_layer")
+        global_top_layer = self.get_setting("par.blockage_spacing_top_layer") #  type: Optional[str]
 
         ############## Actually generate the constraints ################
         for constraint in floorplan_constraints:
@@ -862,7 +862,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     ))
                     spacing = self.get_setting("par.blockage_spacing")
                     if constraint.top_layer is not None:
-                        current_top_layer = constraint.top_layer
+                        current_top_layer = constraint.top_layer #  type: Optional[str]
                     elif global_top_layer is not None:
                         current_top_layer = global_top_layer
                     else:
