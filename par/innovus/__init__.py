@@ -569,10 +569,32 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             " ".join(gds_files)
         )
 
-        self.verbose_append("write_stream -mode ALL {map_file} {merge_options} {gds}".format(
+        # If the user has specified the par.inputs.gds_precision_mode as
+        # "auto", we make write_stream modify the GDS precision according to
+        # the value of par.inputs.gds_precision. If this setting is not
+        # specified then we fall back to the default behaviour, which is to use
+        # the units specified in the LEF. See documentation for write_stream
+        # for what this switch does and what valid values are.
+        unit = ""
+        if (self.get_setting("par.inputs.gds_precision_mode") == "manual"):
+            gds_precision = self.get_setting("par.inputs.gds_precision") or ""
+            # TODO(aryap): What if valid values are tool-_version_ specific?
+            valid_values = [100, 200, 1000, 2000, 10000, 20000]
+            if gds_precision in valid_values:
+                unit = "-unit %s" % gds_precision
+            else:
+                self.logger.error(
+                    "par.inputs.gds_precision value of \"%s\" must be one of %s" %(
+                        gds_precision, ', '.join(valid_values)));
+                return False
+        # "auto", i.e. not "manual", means not specifying anything extra.
+
+        self.verbose_append(
+            "write_stream -mode ALL {map_file} {merge_options} {unit} {gds}".format(
             map_file=map_file,
             merge_options=merge_options,
-            gds=self.output_gds_filename
+            gds=self.output_gds_filename,
+            unit=unit
         ))
         return True
 
