@@ -11,17 +11,20 @@ from itertools import product
 
 import os
 import errno
-import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, CadenceTool, HammerToolStep, HammerToolHookAction, \
-    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint
+from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
+    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from hammer_tech import RoutingDirection, Metal
 import specialcells
 from specialcells import CellType, SpecialCell
 from decimal import Decimal
+
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
+from tool import CadenceTool
 
 # Notes: camelCase commands are the old syntax (deprecated)
 # snake_case commands are the new/common UI syntax.
@@ -35,6 +38,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         outputs["par.outputs.seq_cells"] = self.output_seq_cells
         outputs["par.outputs.all_regs"] = self.output_all_regs
         outputs["par.outputs.sdf_file"] = self.output_sdf_path
+        outputs["par.outputs.spef_files"] = self.output_spef_paths
         return outputs
 
     def fill_outputs(self) -> bool:
@@ -67,25 +71,25 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         self.output_sim_netlist = self.output_sim_netlist_filename
         self.hcells_list = []
 
-        if not os.path.isfile(self.all_regs_path):
-            raise ValueError("Output find_regs.json %s not found" % (self.all_regs_path))
+        if not os.path.isfile(self.all_cells_path):
+            raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
+        self.output_seq_cells = self.all_cells_path
 
-        with open(self.all_regs_path, "r") as f:
-            j = json.load(f)
-            self.output_seq_cells = j["seq_cells"]
-            reg_paths = j["reg_paths"]
-            for i in range(len(reg_paths)):
-                split = reg_paths[i].split("/")
-                if split[-2][-1] == "]":
-                    split[-2] = "\\" + split[-2]
-                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
-                else:
-                    reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
-            self.output_all_regs = reg_paths
+        if not os.path.isfile(self.all_regs_path):
+            raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
+        self.output_all_regs = self.all_regs_path
+
+        if not self.process_reg_paths(self.all_regs_path):
+            self.logger.error("Failed to process all register paths")
 
         if not os.path.isfile(self.output_sdf_path):
             raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
         self.sdf_file = self.output_sdf_path
+
+        for spef_path in self.output_spef_paths:
+            if not os.path.isfile(spef_path):
+                raise ValueError("Output SPEF %s not found" % (spef_path))
+            self.spef_files = self.output_spef_paths
         return True
 
     @property
@@ -102,11 +106,23 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     @property
     def all_regs_path(self) -> str:
-        return os.path.join(self.run_dir, "find_regs.json")
+        return os.path.join(self.run_dir, "find_regs_paths.json")
+
+    @property
+    def all_cells_path(self) -> str:
+        return os.path.join(self.run_dir, "find_regs_cells.json")
 
     @property
     def output_sdf_path(self) -> str:
         return os.path.join(self.run_dir, "{top}.par.sdf".format(top=self.top_module))
+
+    @property
+    def output_spef_paths(self) -> List[str]:
+        if self.get_mmmc_corners():
+            return [os.path.join(self.run_dir, "{top}.setup.par.spef".format(top=self.top_module)),
+                os.path.join(self.run_dir, "{top}.hold.par.spef".format(top=self.top_module))]
+        else:
+            return [os.path.join(self.run_dir, "{top}.par.spef".format(top=self.top_module))]
 
     @property
     def env_vars(self) -> Dict[str, str]:
@@ -436,8 +452,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # In case the * wildcard is used after preplaced pins, this will place promoted pins correctly.
         # Innovus errors instead of warns if the name matching does not work (e.g. bad wildcards).
-        for pin in promoted_pins:
-            self.verbose_append("assign_io_pins -move_fixed_pin -pins [get_db [get_db pins -if {{.name == {p} }}] .net.name]".format(p=pin))
+        for ppin in promoted_pins:
+            self.verbose_append("assign_io_pins -move_fixed_pin -pins [get_db [get_db pins -if {{.name == {p} }}] .net.name]".format(p=ppin))
 
         self.verbose_append("set_db assign_pins_edit_in_batch false")
         return True
@@ -607,6 +623,26 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         return True
 
+    def write_spefs(self) -> bool:
+        # Output a SPEF file that contains the parasitic extraction results
+        self.verbose_append("set_db extract_rc_coupled true")
+        self.verbose_append("extract_rc")
+        corners = self.get_mmmc_corners()
+        if corners:
+            for corner in corners:
+                if corner.type is MMMCCornerType.Setup:
+                    setup_corner_name = "{cname}.setup_rc".format(cname=corner.name)
+                elif corner.type is MMMCCornerType.Hold:
+                    hold_corner_name = "{cname}.hold_rc".format(cname=corner.name)
+            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.setup.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=setup_corner_name))
+            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name))
+        else:
+            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.par.spef".format(run_dir=self.run_dir, top=self.top_module))
+    
+        return True
+
+
+
     @property
     def output_innovus_lib_name(self) -> str:
         return "{top}_FINAL".format(top=self.top_module)
@@ -625,47 +661,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
-        self.append('''
-        set write_regs_ir "./find_regs.json"
-        set write_regs_ir [open $write_regs_ir "w"]
-        puts $write_regs_ir "\{"
-        puts $write_regs_ir {   "seq_cells" : [}
-
-        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
-
-        set len [llength $refs]
-
-        for {set i 0} {$i < [llength $refs]} {incr i} {
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\""
-            } else {
-                puts $write_regs_ir "    \\"[lindex $refs $i]\\","
-            }
-        }
-
-        puts $write_regs_ir "  \],"
-        puts $write_regs_ir {   "reg_paths" : [}
-
-        set regs [get_db [all_registers -edge_triggered -output_pins] .name]
-
-        set len [llength $regs]
-
-        for {set i 0} {$i < [llength $regs]} {incr i} {
-            #regsub -all {/} [lindex $regs $i] . myreg
-            set myreg [lindex $regs $i]
-            if {$i == $len - 1} {
-                puts $write_regs_ir "    \\"$myreg\\""
-            } else {
-                puts $write_regs_ir "    \\"$myreg\\","
-            }
-        }
-
-        puts $write_regs_ir "  \]"
-
-        puts $write_regs_ir "\}"
-        close $write_regs_ir
-        ''')
-
+        self.append(self.write_regs_tcl())
         return True
 
     def write_design(self) -> bool:
@@ -682,6 +678,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Write SDF
         self.write_sdf()
+
+        # Write SPEF
+        self.write_spefs()
+
+        # Make sure that generated-scripts exists.
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
         return True
 
@@ -829,7 +831,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         )
 
         floorplan_constraints = self.get_placement_constraints()
-        global_top_layer = self.get_setting("par.blockage_spacing_top_layer")
+        global_top_layer = self.get_setting("par.blockage_spacing_top_layer") #  type: Optional[str]
 
         ############## Actually generate the constraints ################
         for constraint in floorplan_constraints:
@@ -882,7 +884,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     ))
                     spacing = self.get_setting("par.blockage_spacing")
                     if constraint.top_layer is not None:
-                        current_top_layer = constraint.top_layer
+                        current_top_layer = constraint.top_layer #  type: Optional[str]
                     elif global_top_layer is not None:
                         current_top_layer = global_top_layer
                     else:
