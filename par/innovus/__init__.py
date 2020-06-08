@@ -38,7 +38,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         outputs["par.outputs.seq_cells"] = self.output_seq_cells
         outputs["par.outputs.all_regs"] = self.output_all_regs
         outputs["par.outputs.sdf_file"] = self.output_sdf_path
-        outputs["par.outputs.spef_files"] = self.output_spef_paths
+        outputs["par.outputs.spefs"] = self.output_spef_paths
         return outputs
 
     def fill_outputs(self) -> bool:
