@@ -594,7 +594,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         unit = ""
         if (self.get_setting("par.inputs.gds_precision_mode") == "manual"):
             gds_precision = self.get_setting("par.inputs.gds_precision") or ""
-            # TODO(aryap): What if valid values are tool-_version_ specific?
             valid_values = [100, 200, 1000, 2000, 10000, 20000]
             if gds_precision in valid_values:
                 unit = "-unit %s" % gds_precision
