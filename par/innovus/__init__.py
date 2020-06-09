@@ -588,7 +588,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # If the user has specified the par.inputs.gds_precision_mode as
         # "auto", we make write_stream modify the GDS precision according to
         # the value of par.inputs.gds_precision. If this setting is not
-        # specified then we fall back to the default behaviour, which is to use
+        # specified then we fall back to the default behavior, which is to use
         # the units specified in the LEF. See documentation for write_stream
         # for what this switch does and what valid values are.
         unit = ""
