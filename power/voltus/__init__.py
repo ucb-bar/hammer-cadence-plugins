@@ -59,7 +59,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
-        innovus_db = self.par_database
+        innovus_db = os.path.join(os.getcwd(), self.par_database)
         if innovus_db is None or not os.path.isdir(innovus_db):
             raise ValueError("Innovus database %s not found" % (innovus_db))
 
@@ -73,7 +73,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_power_pads -net {VDD} -format defpin".format(VDD=vdd_net))
         verbose_append("set_power_pads -net {VSS} -format defpin".format(VSS=vss_net))
 
-        # TODO (daniel) deal with multiplce corners
+        # TODO (daniel) deal with multiple corners
         corners = self.get_mmmc_corners()
         for corner in corners:
             if corner.type is MMMCCornerType.Setup:
@@ -86,7 +86,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         ##TODO(daniel): add additional options
         verbose_append("read_spef {{ {spefs} }} -rc_corner {{ {corners} }}".format(
-          spefs=" ".join(self.spefs),
+          spefs=" ".join(list(map(lambda spef: os.path.join(os.getcwd(), spef), self.spefs))),
           corners=" ".join([setup_spef_name, hold_spef_name])))
 
 
@@ -98,7 +98,16 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_db power_method static")
         verbose_append("set_db power_write_static_currents true")
         verbose_append("set_db power_write_db true")
-        verbose_append("report_power -out_dir staticPowerReports")
+
+        # Report based on MMMC mode
+        corners = self.get_mmmc_corners()
+        if not corners:
+            verbose_append("report_power -out_dir staticPowerReports")
+        else:
+            setup_view_name = "{cname}.setup_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Setup, corners)).pop().name))
+            verbose_append("report_power -view {SETUP_VIEW} -out_dir staticPowerReports -report_prefix {SETUP_VIEW}".format(SETUP_VIEW=setup_view_name))
+            hold_view_name = "{cname}.hold_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Hold, corners)).pop().name))
+            verbose_append("report_power -view {HOLD_VIEW} -out_dir staticPowerReports -report_prefix {HOLD_VIEW}".format(HOLD_VIEW=hold_view_name))
 
         return True
 
@@ -119,7 +128,21 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_db power_method dynamic_vectorless")
         # TODO (daniel) add the resolution as an option?
         verbose_append("set_dynamic_power_simulation -resolution 500ps")
-        verbose_append("report_power -out_dir activePowerReports")
+
+        # Check MMMC mode
+        corners = self.get_mmmc_corners()
+        if not corners:
+            verbose_append("report_power -out_dir activePowerReports")
+        else:
+            setup_view_name = "{cname}.setup_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Setup, corners)).pop().name))
+            hold_view_name = "{cname}.hold_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Hold, corners)).pop().name))
+
+        # Report based on MMMC mode
+        if not corners:
+            verbose_append("report_power -out_dir activePowerReports")
+        else:
+            verbose_append("report_power -view {SETUP_VIEW} -out_dir activePowerReports -report_prefix {SETUP_VIEW}".format(SETUP_VIEW=setup_view_name))
+            verbose_append("report_power -view {HOLD_VIEW} -out_dir activePowerReports -report_prefix {HOLD_VIEW}".format(HOLD_VIEW=hold_view_name))
 
         # TODO (daniel) deal with different tb/dut hierarchies
         tb_name = self.get_setting("power.inputs.tb_name")
@@ -136,17 +159,27 @@ class Voltus(HammerPowerTool, CadenceTool):
         for vcd_path, vcd_stime, vcd_etime in zip(self.waveforms, start_times, end_times):
             stime_ns = TimeValue(vcd_stime).value_in_units("ns")
             etime_ns = TimeValue(vcd_etime).value_in_units("ns")
-            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {stime}ns -end {etime}ns -scope {TESTBENCH}".format(VCD_PATH=vcd_path, TESTBENCH=tb_scope, stime=stime_ns, etime=etime_ns))
-            # TODO (daniel) make this change name based on input vector file
-            verbose_append("report_power -out_dir activePower.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
-            verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_path.split('/')[-1]))
+            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {stime}ns -end {etime}ns -scope {TESTBENCH}".format(VCD_PATH=os.path.join(os.getcwd(), vcd_path), TESTBENCH=tb_scope, stime=stime_ns, etime=etime_ns))
+            vcd_file = os.path.basename(vcd_path)
+            # Report based on MMMC mode
+            if not corners:
+                verbose_append("report_power -out_dir activePower.{VCD_FILE}".format(VCD_FILE=vcd_file))
+            else:
+                verbose_append("report_power -view {SETUP_VIEW} -out_dir activePower.{VCD_FILE} -report_prefix {SETUP_VIEW}".format(SETUP_VIEW=setup_view_name, VCD_FILE=vcd_file))
+                verbose_append("report_power -view {HOLD_VIEW} -out_dir activePower.{VCD_FILE} -report_prefix {HOLD_VIEW}".format(HOLD_VIEW=hold_view_name, VCD_FILE=vcd_file))
+            verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_file))
 
         verbose_append("set_db power_method dynamic")
         for saif_path in self.saifs:
             verbose_append("set_dynamic_power_simulation -reset")
-            verbose_append("read_activity_file -reset -format SAIF {SAIF_PATH} -scope {TESTBENCH}".format(SAIF_PATH=saif_path, TESTBENCH=tb_scope))
-            # TODO (daniel) make this change name based on input vector file
-            verbose_append("report_power -out_dir activePower.{SAIF_FILE}".format(SAIF_FILE=".".join(saif_path.split('/')[-2:])))
+            verbose_append("read_activity_file -reset -format SAIF {SAIF_PATH} -scope {TESTBENCH}".format(SAIF_PATH=os.path.join(os.getcwd(), saif_path), TESTBENCH=tb_scope))
+            saif_file=".".join(saif_path.split('/')[-2:])
+            # Report based on MMMC mode
+            if not corners:
+                verbose_append("report_power -out_dir activePower.{SAIF_FILE}".format(SAIF_FILE=saif_file))
+            else:
+                verbose_append("report_power -view {SETUP_VIEW} -out_dir activePower.{SAIF_FILE} -report_prefix {SETUP_VIEW}".format(SETUP_VIEW=setup_view_name, SAIF_FILE=saif_file))
+                verbose_append("report_power -view {HOLD_VIEW} -out_dir activePower.{SAIF_FILE} -report_prefix {HOLD_VIEW}".format(HOLD_VIEW=hold_view_name, SAIF_FILE=saif_file))
         return True
 
     def active_rail(self) -> bool:
