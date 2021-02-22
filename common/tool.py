@@ -344,6 +344,12 @@ if {{ {get_db_str} ne "" }} {{
             assert isinstance(reg_paths, List), "Output find_regs_paths.json should be a json list of strings"
             for i in range(len(reg_paths)):
                 split = reg_paths[i].split("/")
+                # If the net is part of a generate block, the generated names have a "." in them and the whole name
+                # needs to be escaped.
+                for index, node in enumerate(split):
+                    if "." in node:
+                        split[index] = "\\" + node + "\\"
+                # If the last net is part of a bus, it needs to be escaped
                 if split[-2][-1] == "]":
                     split[-2] = "\\" + split[-2]
                     reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
