@@ -90,8 +90,8 @@ class Voltus(HammerPowerTool, CadenceTool):
             self.init_technology,
             self.init_design,
             self.static_power,
-            self.static_rail,
             self.active_power,
+            self.static_rail,
             self.active_rail,
             self.run_voltus
         ])
@@ -268,102 +268,6 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         return True
 
-    def rail_analysis(self, method: str, power_dir: str, output_dir: Optional[str] = None) -> bool:
-        """
-        Generic method for rail analysis
-        params:
-        - method: "static" or "dynamic"
-        - power_dir: relative path to static or active power current files
-        - output_dir: relative path to rail analysis output dir
-        """
-        verbose_append = self.verbose_append
-
-        if not output_dir:
-            output_dir = method + "RailReports"
-
-        # Decide accuracy based on existence of PGV libraries, unless overridden
-        accuracy = self.get_setting("power.voltus.rail_accuracy")
-        if not accuracy:
-            accuracy = "hd" if self.ran_stdcell_pgv else "xd" # hd still works w/o macro PG views
-            
-        base_options = [
-            "-method", method,
-            "-accuracy", accuracy,
-            "-process_techgen_em_rules", "true",
-            "-em_peak_analysis", "true",
-            "-enable_rlrp_analysis", "true",
-            "-gif_resolution", "high",
-            "-verbosity", "true"
-        ]
-        if method == "static":
-            base_options.extend(["-enable_sensitivity_analysis", "true"])
-
-        # TODO: Need combinations of all power nets + voltage domains
-        pg_nets = self.get_all_power_nets() + self.get_all_ground_nets()
-        # Report based on MMMC corners
-        corners = self.get_mmmc_corners()
-        if not corners:
-            options = base_options.copy()
-            pg_libs = [os.path.join(self.tech_lib_dir, "techonly.cl")]
-            if self.ran_stdcell_pgv:
-                pg_libs.append(os.path.join(self.stdcell_lib_dir, "stdcells.cl"))
-            if self.ran_macro_pgv:
-                # Assume library name matches cell name
-                # TODO: Use some filters w/ LEFUtils to extract cells from LEFs
-                macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
-                pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, "macros_{}.cl".format(l)), macros)))
-            options.extend(["-power_grid_libraries", "{{ {} }}".format(" ".join(pg_libs))])
-            verbose_append("set_rail_analysis_config {}".format(" ".join(options)))
-            # TODO: get nets and .ptiavg files using TCL from the .ptifiles file in the power reports directory
-            power_data = list(map(lambda n: "{POWER_DIR}/{METHOD}_{NET}.ptiavg".format(
-                POWER_DIR=power_dir,
-                METHOD=method,
-                NET=n.name), pg_nets))
-            verbose_append("set_power_data -format current {{ {} }}".format(" ".join(power_data)))
-            verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
-            # TODO: Find highest run number, increment by 1 to enable reporting IRdrop regions
-        else:
-            for corner in corners:
-                options = base_options.copy()
-                if corner.type is MMMCCornerType.Setup:
-                    view_name = corner.name + ".setup_view"
-                elif corner.type is MMMCCornerType.Hold:
-                    view_name = corner.name + ".hold_view"
-                elif corner.type is MMMCCornerType.Extra:
-                    view_name = corner.name + ".extra_view"
-                else:
-                    raise ValueError("Unsupported MMMCCornerType")
-                pg_libs = [os.path.join(self.tech_lib_dir, corner.name, "techonly.cl")]
-                if self.ran_stdcell_pgv:
-                    pg_libs.append(os.path.join(self.stdcell_lib_dir, corner.name, "stdcells.cl"))
-                if self.ran_macro_pgv:
-                    # Assume library name matches cell name
-                    # TODO: Use some filters w/ LEFUtils to extract cells from LEFs
-                    macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
-                    pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, corner.name, "macros_{}.cl".format(l)), macros)))
-
-                options.extend([
-                    "-power_grid_libraries", "{{ {} }}".format(" ".join(pg_libs)),
-                    "-analysis_view", view_name,
-                    "-temperature", str(corner.temp.value)
-                ])
-                verbose_append("set_rail_analysis_config {}".format(" ".join(options)))
-                verbose_append("set_power_data -reset")
-                # TODO: get nets and .ptiavg files using TCL from the .ptifiles file in the power reports directory
-                power_data = list(map(lambda n: "{POWER_DIR}.{VIEW}/{METHOD}_{NET}.ptiavg".format(
-                    POWER_DIR=power_dir,
-                    VIEW=view_name,
-                    METHOD=method,
-                    NET=n.name), pg_nets))
-                verbose_append("set_power_data -format current {{ {} }}".format(" ".join(power_data)))
-                verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
-                # TODO: Find highest run number, increment by 1 to enable reporting IRdrop regions
-
-        return True
-
-    def static_rail(self) -> bool:
-        return self.rail_analysis("static", "staticPowerReports")
-
     def active_power(self) -> bool:
         verbose_append = self.verbose_append
 
@@ -424,6 +328,102 @@ class Voltus(HammerPowerTool, CadenceTool):
                 verbose_append("report_power -view {SETUP_VIEW} -out_dir activePower.{SAIF_FILE}.{SETUP_VIEW}".format(SETUP_VIEW=setup_view_name, SAIF_FILE=saif_file))
                 verbose_append("report_power -view {HOLD_VIEW} -out_dir activePower.{SAIF_FILE}.{HOLD_VIEW}".format(HOLD_VIEW=hold_view_name, SAIF_FILE=saif_file))
         return True
+
+    def rail_analysis(self, method: str, power_dir: str, output_dir: Optional[str] = None) -> bool:
+        """
+        Generic method for rail analysis
+        params:
+        - method: "static" or "dynamic"
+        - power_dir: relative path to static or active power current files
+        - output_dir: relative path to rail analysis output dir
+        """
+        verbose_append = self.verbose_append
+
+        if not output_dir:
+            output_dir = method + "RailReports"
+
+        # Decide accuracy based on existence of PGV libraries, unless overridden
+        accuracy = self.get_setting("power.voltus.rail_accuracy")
+        if not accuracy:
+            accuracy = "hd" if self.ran_stdcell_pgv else "xd" # hd still works w/o macro PG views
+            
+        base_options = [
+            "-method", method,
+            "-accuracy", accuracy,
+            "-process_techgen_em_rules", "true",
+            "-em_peak_analysis", "true",
+            "-enable_rlrp_analysis", "true",
+            "-gif_resolution", "high",
+            "-verbosity", "true"
+        ]
+        if method == "static":
+            base_options.extend(["-enable_sensitivity_analysis", "true"])
+
+        # TODO: Need combinations of all power nets + voltage domains
+        pg_nets = self.get_all_power_nets() + self.get_all_ground_nets()
+        # Report based on MMMC corners
+        corners = self.get_mmmc_corners()
+        if not corners:
+            options = base_options.copy()
+            pg_libs = [os.path.join(self.tech_lib_dir, "techonly.cl")]
+            if self.ran_stdcell_pgv:
+                pg_libs.append(os.path.join(self.stdcell_lib_dir, "stdcells.cl"))
+            if self.ran_macro_pgv:
+                # Assume library name matches cell name
+                # TODO: Use some filters w/ LEFUtils to extract cells from LEFs
+                macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
+                pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, "macros_{}.cl".format(l)), macros)))
+            options.extend(["-power_grid_libraries", "{{ {} }}".format(" ".join(pg_libs))])
+            verbose_append("set_rail_analysis_config {}".format(" ".join(options)))
+            # TODO: get nets and .ptiavg files using TCL from the .ptifiles file in the power reports directory
+            power_data = list(map(lambda n: "{POWER_DIR}/{METHOD}_{NET}.ptiavg".format(
+                POWER_DIR=power_dir,
+                METHOD=method,
+                NET=n.name), pg_nets))
+            verbose_append("set_power_data -format current {{ {} }}".format(" ".join(power_data)))
+            verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
+            # TODO: Find highest run number, increment by 1 to enable reporting IRdrop regions
+        else:
+            for corner in corners: 
+                options = base_options.copy()
+                if corner.type is MMMCCornerType.Setup:
+                    view_name = corner.name + ".setup_view"
+                elif corner.type is MMMCCornerType.Hold:
+                    view_name = corner.name + ".hold_view"
+                elif corner.type is MMMCCornerType.Extra:
+                    view_name = corner.name + ".extra_view"
+                else:
+                    raise ValueError("Unsupported MMMCCornerType")
+                pg_libs = [os.path.join(self.tech_lib_dir, corner.name, "techonly.cl")]
+                if self.ran_stdcell_pgv:
+                    pg_libs.append(os.path.join(self.stdcell_lib_dir, corner.name, "stdcells.cl"))
+                if self.ran_macro_pgv:
+                    # Assume library name matches cell name
+                    # TODO: Use some filters w/ LEFUtils to extract cells from LEFs
+                    macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
+                    pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, corner.name, "macros_{}.cl".format(l)), macros)))
+
+                options.extend([
+                    "-power_grid_libraries", "{{ {} }}".format(" ".join(pg_libs)),
+                    "-analysis_view", view_name,
+                    "-temperature", str(corner.temp.value)
+                ])
+                verbose_append("set_rail_analysis_config {}".format(" ".join(options)))
+                verbose_append("set_power_data -reset")
+                # TODO: get nets and .ptiavg files using TCL from the .ptifiles file in the power reports directory
+                power_data = list(map(lambda n: "{POWER_DIR}.{VIEW}/{METHOD}_{NET}.ptiavg".format(
+                    POWER_DIR=power_dir,
+                    VIEW=view_name,
+                    METHOD=method,
+                    NET=n.name), pg_nets))
+                verbose_append("set_power_data -format current {{ {} }}".format(" ".join(power_data)))
+                verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
+                # TODO: Find highest run number, increment by 1 to enable reporting IRdrop regions
+
+        return True
+
+    def static_rail(self) -> bool:
+        return self.rail_analysis("static", "staticPowerReports")
 
     def active_rail(self) -> bool:
         # Vectorless database
