@@ -299,7 +299,7 @@ if {{ {get_db_str} ne "" }} {{
         set write_cells_ir [open $write_cells_ir "w"]
         puts $write_cells_ir "\["
 
-        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
+        set refs [get_db [get_db lib_cells -if .is_sequential==true] .base_name]
 
         set len [llength $refs]
 
