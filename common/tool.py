@@ -130,12 +130,15 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
         if corners:
             setup_corner = corners[0]  # type: MMMCCorner
             hold_corner = corners[0]  # type: MMMCCorner
+            extra_corner = corners[0]
             # TODO(colins): handle more than one corner and do something with extra corners
             for corner in corners:
                 if corner.type is MMMCCornerType.Setup:
                     setup_corner = corner
                 if corner.type is MMMCCornerType.Hold:
                     hold_corner = corner
+                if corner.type is MMMCCornerType.Extra:
+                    extra_corner = corner
 
             # First, create Innovus library sets
             append_mmmc("create_library_set -name {name} -timing [list {list}]".format(
@@ -146,6 +149,10 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
                 name="{n}.hold_set".format(n=hold_corner.name),
                 list=self.get_timing_libs(hold_corner)
             ))
+            append_mmmc("create_library_set -name {name} -timing [list {list}]".format(
+                name="{n}.extra_set".format(n=extra_corner.name),
+                list=self.get_timing_libs(extra_corner)
+            ))
             # Skip opconds for now
             # Next, create Innovus timing conditions
             append_mmmc("create_timing_condition -name {name} -library_sets [list {list}]".format(
@@ -155,6 +162,10 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
             append_mmmc("create_timing_condition -name {name} -library_sets [list {list}]".format(
                 name="{n}.hold_cond".format(n=hold_corner.name),
                 list="{n}.hold_set".format(n=hold_corner.name)
+            ))
+            append_mmmc("create_timing_condition -name {name} -library_sets [list {list}]".format(
+                name="{n}.extra_cond".format(n=extra_corner.name),
+                list="{n}.extra_set".format(n=extra_corner.name)
             ))
             # Next, create Innovus rc corners from qrc tech files
             append_mmmc("create_rc_corner -name {name} -temperature {tempInCelsius} {qrc}".format(
@@ -167,6 +178,11 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
                 tempInCelsius=str(hold_corner.temp.value),
                 qrc="-qrc_tech {}".format(self.get_mmmc_qrc(hold_corner)) if self.get_mmmc_qrc(hold_corner) != '' else ''
             ))
+            append_mmmc("create_rc_corner -name {name} -temperature {tempInCelsius} {qrc}".format(
+                name="{n}.extra_rc".format(n=extra_corner.name),
+                tempInCelsius=str(extra_corner.temp.value),
+                qrc="-qrc_tech {}".format(self.get_mmmc_qrc(extra_corner)) if self.get_mmmc_qrc(extra_corner) != '' else ''
+            ))
             # Next, create an Innovus delay corner.
             append_mmmc(
                 "create_delay_corner -name {name}_delay -timing_condition {name}_cond -rc_corner {name}_rc".format(
@@ -176,11 +192,17 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
                 "create_delay_corner -name {name}_delay -timing_condition {name}_cond -rc_corner {name}_rc".format(
                     name="{n}.hold".format(n=hold_corner.name)
                 ))
+            append_mmmc(
+                "create_delay_corner -name {name}_delay -timing_condition {name}_cond -rc_corner {name}_rc".format(
+                    name="{n}.extra".format(n=extra_corner.name)
+                ))
             # Next, create the analysis views
             append_mmmc("create_analysis_view -name {name}_view -delay_corner {name}_delay -constraint_mode {constraint}".format(
                 name="{n}.setup".format(n=setup_corner.name), constraint=constraint_mode))
             append_mmmc("create_analysis_view -name {name}_view -delay_corner {name}_delay -constraint_mode {constraint}".format(
                 name="{n}.hold".format(n=hold_corner.name), constraint=constraint_mode))
+            append_mmmc("create_analysis_view -name {name}_view -delay_corner {name}_delay -constraint_mode {constraint}".format(
+                name="{n}.extra".format(n=extra_corner.name), constraint=constraint_mode))
             # Finally, apply the analysis view.
             append_mmmc("set_analysis_view -setup {{ {setup_view} }} -hold {{ {hold_view} }}".format(
                 setup_view="{n}.setup_view".format(n=setup_corner.name),

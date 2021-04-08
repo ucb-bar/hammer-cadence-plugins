@@ -644,7 +644,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.verbose_append("flatten_ilm")
 
         # Output the Standard Delay Format File for use in timing annotated gate level simulations
-        self.verbose_append("write_sdf {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
+        self.verbose_append("write_sdf -recompute_delay_calc {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
 
         return True
 
@@ -659,8 +659,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     setup_corner_name = "{cname}.setup_rc".format(cname=corner.name)
                 elif corner.type is MMMCCornerType.Hold:
                     hold_corner_name = "{cname}.hold_rc".format(cname=corner.name)
+                else:
+                    extra_corner_name = "{cname}.extra_rc".format(cname=corner.name)
             self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.setup.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=setup_corner_name))
-            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name))
+            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name)) 
         else:
             self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.par.spef".format(run_dir=self.run_dir, top=self.top_module))
 

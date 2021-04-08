@@ -200,6 +200,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
             verbose_append("set_db lp_clock_gating_hierarchical true")
             verbose_append("set_db lp_insert_clock_gating_incremental true")
             verbose_append("set_db lp_clock_gating_register_aware true")
+            verbose_append("set_db hdl_max_loop_limit 2048")
 
         # Set up libraries.
         # Read timing libraries.
