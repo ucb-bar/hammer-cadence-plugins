@@ -82,12 +82,15 @@ class Voltus(HammerPowerTool, CadenceTool):
             elif corner.type is MMMCCornerType.Hold:
                 hold_view_name = "{cname}.hold_view".format(cname=corner.name)
                 hold_spef_name = "{cname}.hold_rc".format(cname=corner.name)
-        verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name))
+            else:
+                extra_view_name = "{cname}.extra_view".format(cname=corner.name)
+                extra_spef_name = "{cname}.extra_rc".format(cname=corner.name)
+        verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {EXTRA_VIEW} -leakage {EXTRA_VIEW} -dynamic {EXTRA_VIEW}".format(SETUP_VIEW=setup_view_name, EXTRA_VIEW=extra_view_name))
 
         ##TODO(daniel): add additional options
         verbose_append("read_spef {{ {spefs} }} -rc_corner {{ {corners} }}".format(
           spefs=" ".join(list(map(lambda spef: os.path.join(os.getcwd(), spef), self.spefs))),
-          corners=" ".join([setup_spef_name, hold_spef_name])))
+          corners=" ".join([setup_spef_name, extra_spef_name]))) # TODO: add extra_spef_name if extra was used for set_analysis_view during par?
 
 
         return True
