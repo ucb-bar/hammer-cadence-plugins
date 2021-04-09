@@ -110,7 +110,8 @@ class Joules(HammerPowerTool, CadenceTool):
         waveforms = self.get_setting("power.inputs.waveforms")
         for wave in waveforms:
             #verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -frame_count 5 -append".format(VCD=wave, TB=tb_name, DUT=tb_dut))
-            verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles 1 /adder/clk -append".format(VCD=wave, TB=tb_name, DUT=tb_dut))
+            verbose_append("read_stimulus {VCD} -dut_instance TestDriver/testHarness/chiptop -format vcd -frame_count 5 -append".format(VCD=wave))
+            #verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles 1 /adder/clk -append".format(VCD=wave, TB=tb_name, DUT=tb_dut))
 
         saifs = self.get_setting("power.inputs.saifs")
         for saif in saifs:
@@ -125,7 +126,7 @@ class Joules(HammerPowerTool, CadenceTool):
 
         verbose_append("compute_power -mode time_based")
 
-        verbose_append("report_power -by_hierarchy -frames /stim#1/frame#\[0:\] -indent_inst -unit mW -out {FILE} -append".format(FILE=report_file))
+        verbose_append("report_power -by_hierarchy -frames /stim#1/frame#0 -indent_inst -unit mW -out {FILE} -append".format(FILE=report_file))
 
         #verbose_append("report_power -frame {/stim#1/frame#\[1:4\]} -by_hierarchy -indent_inst -unit mW")
 
