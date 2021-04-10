@@ -89,7 +89,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                 else:
                     raise ValueError("Unsupported MMMCCornerType")
             if any(corner.type is MMMCCornerType.Extra for corner in corners): # if the extra view is defined
-                verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name, EXTRA_VIEW=extra_view_name)) # add extra for leakage if exists
+                verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name, EXTRA_VIEW=extra_view_name))
             else:
                 verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name))
 
