@@ -422,7 +422,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         ex=fp_llx if pin.side != "right" else fp_urx,
                         ey=fp_lly if pin.side != "top" else fp_ury
                     )
-                    pattern_arg = "-pattern fill_optimised"
+                    if len(pin.layers) > 1:
+                        pattern_arg = "-pattern fill_optimised"
+                    else:
+                        pattern_arg = "-spread_type range"
                 else:
                     assign_arg = "-assign {{ {x} {y} }}".format(x=pin.location[0], y=pin.location[1])
 
