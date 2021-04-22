@@ -14,7 +14,7 @@ import errno
 import json
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCornerType, TimeValue
+from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCornerType, FlowLevel, TimeValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 
@@ -74,15 +74,21 @@ class Joules(HammerPowerTool, CadenceTool):
         # verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
         # TODO change to self.hdl
-        hdl = self.get_setting("power.inputs.hdl")
         top_module = self.get_setting("power.inputs.top_module")
-        #tb_name = self.get_setting("power.inputs.tb_name")
         tb_name = self.tb_name
-        #tb_dut = self.get_setting("power.inputs.tb_dut")
-        tb_dut = self.tb_dut
+        # Replace . to / formatting in case argument passed from sim tool
+        tb_dut = self.tb_dut.replace(".", "/")
 
-        # Read in the design files
-        verbose_append("read_hdl {HDL}".format(HDL=" ".join(hdl)))
+
+        if self.level == FlowLevel.RTL:
+            hdl = self.get_setting("power.inputs.hdl")
+            # Read in the design files
+            verbose_append("read_hdl {}".format(" ".join(hdl)))
+
+        elif self.level == FlowLevel.GateLevel:
+            syn_db = self.get_setting("power.inputs.database")
+            # Read in the synthesis db
+            verbose_append("read_db {}".format(syn_db))
 
         # Setup the power specification
         power_spec_arg = self.map_power_spec_name()
@@ -90,55 +96,82 @@ class Joules(HammerPowerTool, CadenceTool):
 
         verbose_append("read_power_intent -{tpe} {spec} -module {TOP_MODULE}".format(tpe=power_spec_arg, spec=power_spec_file, TOP_MODULE=top_module))
 
-        # Set options
-        # pre-elaboration
+        # Set options pre-elaboration
         verbose_append("set_db leakage_power_effort low")
         verbose_append("set_db lp_insert_clock_gating true")
 
-        # Elaborate the design
-        verbose_append("elaborate {TOP_MODULE}".format(TOP_MODULE=top_module))
 
-        # Generate and read the SDCs
-        sdc_files = self.generate_sdc_files()  # type: List[str]
-        verbose_append("read_sdc {}".format(" ".join(sdc_files)))
+        if self.level == FlowLevel.RTL:
+            # Elaborate the design
+            verbose_append("elaborate {TOP_MODULE}".format(TOP_MODULE=top_module))
 
-        # TODO change effort?
-        verbose_append("power_map -root {} -effort low".format(top_module))
+            # Generate and read the SDCs
+            sdc_files = self.generate_sdc_files()  # type: List[str]
+            verbose_append("read_sdc {}".format(" ".join(sdc_files)))
 
-        # reading stimulus
-        # TODO add time interval based on cycle info; add to defaults.yml to control?
+            verbose_append("power_map -root {} -effort low".format(top_module))
+
+        #verbose_append("gen_clock_tree -clock_root /top/clock1 -name myCT")
+
+        stims = [] # type: List[str]
+        framed_stims = [] # type: List[str]
+
+        # Reading stimulus
         waveforms = self.get_setting("power.inputs.waveforms")
         for wave in waveforms:
-            #verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -frame_count 5 -append".format(VCD=wave, TB=tb_name, DUT=tb_dut))
-            verbose_append("read_stimulus {VCD} -dut_instance TestDriver/testHarness/chiptop -format vcd -frame_count 5 -append".format(VCD=wave))
-            #verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles 1 /adder/clk -append".format(VCD=wave, TB=tb_name, DUT=tb_dut))
+            wave_basename = os.path.basename(wave)
+            stims.append(wave_basename)
+            verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, NAME=wave_basename))
+
+            frames_mode = self.get_setting("power.inputs.frames.mode")
+            if frames_mode != "none":
+                framed_stims.append(wave_basename)
+                if frames_mode == "count":
+                    frame_count = str(self.get_setting("power.inputs.frames.frame_count"))
+                    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -frame_count {COUNT} -alias {NAME}_framed -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, COUNT=frame_count, NAME=wave_basename))
+                elif frames_mode == "cycles":
+                    signal = self.get_setting("power.inputs.frames.toggle_signal_path")
+                    cycles = str(self.get_setting("power.inputs.frames.toggle_signal_cycles"))
+                    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles {COUNT} {SIGNAL} -alias {NAME}_framed -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, COUNT=cycles, SIGNAL=signal, NAME=wave_basename))
+                else:
+                    # TODO throw error?
+                    pass
 
         saifs = self.get_setting("power.inputs.saifs")
         for saif in saifs:
-            verbose_append("read_stimulus {SAIF} -dut_instance {TB}/{DUT} -format saif -append".format(SAIF=saif, TB=tb_name, DUT=tb_dut))
+            saif_basename = os.path.basename(saif)
+            stims.append(saif_basename)
+            verbose_append("read_stimulus {SAIF} -dut_instance {TB}/{DUT} -format saif -alias {NAME} -append".format(SAIF=saif, TB=tb_name, DUT=tb_dut, NAME=saif_basename))
+
+
+        verbose_append("compute_power -mode time_based")
+
+        for stim in stims:
+            # TODO: got rid of -append so the report is overwritten; check functionality
+            verbose_append("report_power -stims {STIM} -by_hierarchy -levels 3 -indent_inst -unit mW -out {STIM}.report".format(STIM=stim))
+
+        for stim in framed_stims:
+            verbose_append("set num_frames [get_sdb_frames -stims {} -count]".format(stim))
+            #verbose_append("puts $num_frames")
+            #verbose_append("report_power -stims {NAME} -by_hierarchy -levels 3 -indent_inst -unit mW -out {NAME}.report -append".format(NAME=stim))
+            self.append("""
+for {{set i 0}} {{$i < $num_frames}} {{incr i}} {{
+    report_power -by_hierarchy -cols total -indent_inst -frames /{STIM}/frame#$i -unit mW -out {STIM}.report -append
+}}
+            """.format(STIM=stim))
+
+
+
+        # num hierarchy levels, csv, cols
+
+        #    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles 1 /ChipTop/clock -append".format(VCD=wave, TB=tb_name, DUT=tb_dut))
+        #report_file = os.path.join(self.run_dir, "power_report.out")
+        #verbose_append("report_power -by_hierarchy -levels 5 -frames /stim#1/frame#[0:$num_frames] -indent_inst -unit mW -out {FILE} -append".format(FILE=report_file))
 
         return True
 
     def run_joules(self) -> bool:
         verbose_append = self.verbose_append
-
-        report_file = os.path.join(self.run_dir, "power_report.out")
-
-        verbose_append("compute_power -mode time_based")
-
-        verbose_append("report_power -by_hierarchy -frames /stim#1/frame#0 -indent_inst -unit mW -out {FILE} -append".format(FILE=report_file))
-
-        #verbose_append("report_power -frame {/stim#1/frame#\[1:4\]} -by_hierarchy -indent_inst -unit mW")
-
-        #verbose_append("report_power -frame /stim#1/frame#0 -indent_inst -unit mW -out {FILE} -append -csv".format(FILE=report_file))
-        #verbose_append("report_power -frame /stim#1/frame#1 -indent_inst -unit mW -out {FILE} -append -csv".format(FILE=report_file))
-        #verbose_append("report_power -frame /stim#1/frame#2 -indent_inst -unit mW -out {FILE} -append -csv".format(FILE=report_file))
-
-        #verbose_append("report_power -frame {/stim#1/frame#1} -by_hierarchy -indent_inst -unit mW")
-        #verbose_append("report_power -frame {/stim#1/frame#2} -by_hierarchy -indent_inst -unit mW")
-        #verbose_append("report_power -frame {/stim#1/frame#3} -by_hierarchy -indent_inst -unit mW")
-        #verbose_append("report_power -frame {/stim#1/frame#4} -by_hierarchy -indent_inst -unit mW")
-        #verbose_append("report_power -frame {/stim#1/frame#5} -by_hierarchy -indent_inst -unit mW")
 
         """Close out the power script and run Joules"""
         # Quit Joules
