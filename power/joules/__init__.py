@@ -71,9 +71,6 @@ class Joules(HammerPowerTool, CadenceTool):
     def init_design(self) -> bool:
         verbose_append = self.verbose_append
 
-        # verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
-
-        # TODO change to self.hdl
         top_module = self.get_setting("power.inputs.top_module")
         tb_name = self.tb_name
         # Replace . to / formatting in case argument passed from sim tool
@@ -111,8 +108,6 @@ class Joules(HammerPowerTool, CadenceTool):
 
             verbose_append("power_map -root {} -effort low".format(top_module))
 
-        #verbose_append("gen_clock_tree -clock_root /top/clock1 -name myCT")
-
         stims = [] # type: List[str]
         framed_stims = [] # type: List[str]
 
@@ -134,8 +129,9 @@ class Joules(HammerPowerTool, CadenceTool):
                     cycles = str(self.get_setting("power.inputs.frames.toggle_signal_cycles"))
                     verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles {COUNT} {SIGNAL} -alias {NAME}_framed -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, COUNT=cycles, SIGNAL=signal, NAME=wave_basename))
                 else:
-                    # TODO throw error?
-                    pass
+                    self.logger.warning("Bad frames_mode:${frames_mode}. Valid modes are frames, cycles, or none. Defaulting to none.")
+                    frames_mode = "none"
+                    del framed_stims[-1]
 
         saifs = self.get_setting("power.inputs.saifs")
         for saif in saifs:
@@ -151,22 +147,12 @@ class Joules(HammerPowerTool, CadenceTool):
             verbose_append("report_power -stims {STIM} -by_hierarchy -levels 3 -indent_inst -unit mW -out {STIM}.report".format(STIM=stim))
 
         for stim in framed_stims:
-            verbose_append("set num_frames [get_sdb_frames -stims {} -count]".format(stim))
-            #verbose_append("puts $num_frames")
-            #verbose_append("report_power -stims {NAME} -by_hierarchy -levels 3 -indent_inst -unit mW -out {NAME}.report -append".format(NAME=stim))
+            verbose_append("set num_frames [get_sdb_frames -stims {}_framed -count]".format(stim))
             self.append("""
 for {{set i 0}} {{$i < $num_frames}} {{incr i}} {{
-    report_power -by_hierarchy -cols total -indent_inst -frames /{STIM}/frame#$i -unit mW -out {STIM}.report -append
+    report_power -by_hierarchy -levels 3 -cols total -indent_inst -frames /{STIM}_framed/frame#$i -unit mW -out {STIM}.report -append
 }}
             """.format(STIM=stim))
-
-
-
-        # num hierarchy levels, csv, cols
-
-        #    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles 1 /ChipTop/clock -append".format(VCD=wave, TB=tb_name, DUT=tb_dut))
-        #report_file = os.path.join(self.run_dir, "power_report.out")
-        #verbose_append("report_power -by_hierarchy -levels 5 -frames /stim#1/frame#[0:$num_frames] -indent_inst -unit mW -out {FILE} -append".format(FILE=report_file))
 
         return True
 
