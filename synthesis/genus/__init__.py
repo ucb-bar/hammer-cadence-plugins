@@ -32,36 +32,37 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return None
 
     def fill_outputs(self) -> bool:
-        # Check that the mapped.v exists if the synthesis run was successful
-        # TODO: move this check upwards?
-        if not self.ran_write_outputs:
-            self.logger.info("Did not run write_outputs")
-            return True
-
-        mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
-        if not os.path.isfile(mapped_v):
-            raise ValueError("Output mapped verilog %s not found" % (mapped_v)) # better error?
-        self.output_files = [mapped_v]
-
-        if not os.path.isfile(self.mapped_sdc_path):
-            raise ValueError("Output SDC %s not found" % (self.mapped_sdc_path)) # better error?
-        self.output_sdc = self.mapped_sdc_path
-
-        if not os.path.isfile(self.all_cells_path):
-            raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
+        # Check that the regs paths were written properly if the write_regs step was run
         self.output_seq_cells = self.all_cells_path
-
-        if not os.path.isfile(self.all_regs_path):
-            raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
         self.output_all_regs = self.all_regs_path
+        if self.ran_write_regs:
+            if not os.path.isfile(self.all_cells_path):
+                raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
 
-        if not self.process_reg_paths(self.all_regs_path):
-            self.logger.error("Failed to process all register paths")
+            if not os.path.isfile(self.all_regs_path):
+                raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
 
-        if not os.path.isfile(self.output_sdf_path):
-            raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+            if not self.process_reg_paths(self.all_regs_path):
+                self.logger.error("Failed to process all register paths")
+        else:
+            self.logger.info("Did not run write_regs")
 
+        # Check that the synthesis outputs exist if the synthesis run was successful
+        self.output_files = [mapped_v]
+        self.output_sdc = self.mapped_sdc_path
         self.sdf_file = self.output_sdf_path
+        if self.ran_write_outputs:
+            mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
+            if not os.path.isfile(mapped_v):
+                raise ValueError("Output mapped verilog %s not found" % (mapped_v)) # better error?
+
+            if not os.path.isfile(self.mapped_sdc_path):
+                raise ValueError("Output SDC %s not found" % (self.mapped_sdc_path)) # better error?
+
+            if not os.path.isfile(self.output_sdf_path):
+                raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+        else:
+            self.logger.info("Did not run write_outputs")
 
         return True
 
@@ -140,8 +141,17 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return os.path.join(self.run_dir, "{top}.mapped.sdf".format(top=self.top_module))
 
     @property
+    def ran_write_regs(self) -> bool:
+        """The write_regs step sets this to True if it was run."""
+        return self.attr_getter("_ran_write_regs", False)
+
+    @ran_write_regs.setter
+    def ran_write_regs(self, val: bool) -> None:
+        self.attr_setter("_ran_write_regs", val)
+
+    @property
     def ran_write_outputs(self) -> bool:
-        """The write_outputs stage sets this to True if it was run."""
+        """The write_outputs step sets this to True if it was run."""
         return self.attr_getter("_ran_write_outputs", False)
 
     @ran_write_outputs.setter
@@ -293,6 +303,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
         self.append(self.write_regs_tcl())
+        self.ran_write_regs = True
         return True
 
     def write_outputs(self) -> bool:

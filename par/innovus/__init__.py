@@ -66,30 +66,48 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         else:
             self.output_ilms = []
 
+        # Check that the regs paths were written properly if the write_regs step was run
+        self.output_seq_cells = self.all_cells_path
+        self.output_all_regs = self.all_regs_path
+        if self.ran_write_regs:
+            if not os.path.isfile(self.all_cells_path):
+                raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
+
+            if not os.path.isfile(self.all_regs_path):
+                raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
+
+            if not self.process_reg_paths(self.all_regs_path):
+                self.logger.error("Failed to process all register paths")
+        else:
+            self.logger.info("Did not run write_regs")
+
+        # Check that the par outputs exist if the par run was successful
         self.output_gds = self.output_gds_filename
         self.output_netlist = self.output_netlist_filename
         self.output_sim_netlist = self.output_sim_netlist_filename
         self.hcells_list = []
-
-        if not os.path.isfile(self.all_cells_path):
-            raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
-        self.output_seq_cells = self.all_cells_path
-
-        if not os.path.isfile(self.all_regs_path):
-            raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
-        self.output_all_regs = self.all_regs_path
-
-        if not self.process_reg_paths(self.all_regs_path):
-            self.logger.error("Failed to process all register paths")
-
-        if not os.path.isfile(self.output_sdf_path):
-            raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
         self.sdf_file = self.output_sdf_path
+        self.spef_files = self.output_spef_paths
 
-        for spef_path in self.output_spef_paths:
-            if not os.path.isfile(spef_path):
-                raise ValueError("Output SPEF %s not found" % (spef_path))
-            self.spef_files = self.output_spef_paths
+        if self.ran_write_design:
+            if not os.path.isfile(self.output_gds_filename):
+                raise ValueError("Output GDS %s not found" % (self.output_gds_filename))
+
+            if not os.path.isfile(self.output_netlist_filename):
+                raise ValueError("Output netlist %s not found" % (self.output_netlist_filename))
+
+            if not os.path.isfile(self.output_sim_netlist_filename):
+                raise ValueError("Output sim netlist %s not found" % (self.output_sim_netlist_filename))
+
+            if not os.path.isfile(self.output_sdf_path):
+                raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+
+            for spef_path in self.output_spef_paths:
+                if not os.path.isfile(spef_path):
+                    raise ValueError("Output SPEF %s not found" % (spef_path))
+        else:
+            self.logger.info("Did not run write_design")
+
         return True
 
     @property
@@ -640,7 +658,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name))
         else:
             self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.par.spef".format(run_dir=self.run_dir, top=self.top_module))
-    
+
         return True
 
 
@@ -664,6 +682,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
         self.append(self.write_regs_tcl())
+        self.ran_write_regs = True
         return True
 
     def write_design(self) -> bool:
@@ -687,7 +706,27 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Make sure that generated-scripts exists.
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
+        self.ran_write_design=True
+
         return True
+
+    @property
+    def ran_write_regs(self) -> bool:
+        """The write_regs step sets this to True if it was run."""
+        return self.attr_getter("_ran_write_regs", False)
+
+    @ran_write_regs.setter
+    def ran_write_regs(self, val: bool) -> None:
+        self.attr_setter("_ran_write_regs", val)
+
+    @property
+    def ran_write_design(self) -> bool:
+        """The write_design step sets this to True if it was run."""
+        return self.attr_getter("_ran_write_design", False)
+
+    @ran_write_design.setter
+    def ran_write_design(self, val: bool) -> None:
+        self.attr_setter("_ran_write_design", val)
 
     @property
     def ran_write_ilm(self) -> bool:
