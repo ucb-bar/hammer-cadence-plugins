@@ -48,11 +48,11 @@ class Genus(HammerSynthesisTool, CadenceTool):
             self.logger.info("Did not run write_regs")
 
         # Check that the synthesis outputs exist if the synthesis run was successful
+        mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
         self.output_files = [mapped_v]
         self.output_sdc = self.mapped_sdc_path
         self.sdf_file = self.output_sdf_path
         if self.ran_write_outputs:
-            mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
             if not os.path.isfile(mapped_v):
                 raise ValueError("Output mapped verilog %s not found" % (mapped_v)) # better error?
 
@@ -200,7 +200,6 @@ class Genus(HammerSynthesisTool, CadenceTool):
             verbose_append("set_db lp_clock_gating_hierarchical true")
             verbose_append("set_db lp_insert_clock_gating_incremental true")
             verbose_append("set_db lp_clock_gating_register_aware true")
-            verbose_append("set_db hdl_max_loop_limit 2048")
 
         # Set up libraries.
         # Read timing libraries.

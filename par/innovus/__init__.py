@@ -543,7 +543,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def opt_design(self) -> bool:
-        """Post-route optimization and fix setup & hold time violations."""
+        """
+        Post-route optimization and fix setup & hold time violations.
+        -expanded_views creates timing reports for each MMMC view.
+        """
         self.verbose_append("opt_design -post_route -setup -hold -expanded_views")
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             self.verbose_append("unflatten_ilm")
@@ -649,7 +652,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.verbose_append("flatten_ilm")
 
         # Output the Standard Delay Format File for use in timing annotated gate level simulations
-        self.verbose_append("write_sdf -recompute_delay_calc {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
+        self.verbose_append("write_sdf {run_dir}/{top}.par.sdf".format(run_dir=self.run_dir, top=self.top_module))
 
         return True
 
@@ -666,7 +669,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 elif corner.type is MMMCCornerType.Hold:
                     hold_corner_name = "{cname}.hold_rc".format(cname=corner.name)
                     self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name))
-                elif corner.type is MMMCCornerType.Extra: 
+                elif corner.type is MMMCCornerType.Extra:
                     extra_corner_name = "{cname}.extra_rc".format(cname=corner.name)
                     self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.extra.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=extra_corner_name))
                 else:
