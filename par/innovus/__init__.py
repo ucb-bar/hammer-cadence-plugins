@@ -136,14 +136,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     @property
     def output_spef_paths(self) -> List[str]:
-        if self.get_mmmc_corners():
-            if any(corner.type is MMMCCornerType.Extra for corner in self.get_mmmc_corners()): # if extra corner is defined
-                return [os.path.join(self.run_dir, "{top}.setup.par.spef".format(top=self.top_module)),
-                    os.path.join(self.run_dir, "{top}.hold.par.spef".format(top=self.top_module)),
-                    os.path.join(self.run_dir, "{top}.extra.par.spef".format(top=self.top_module))]
-            else:
-                return [os.path.join(self.run_dir, "{top}.setup.par.spef".format(top=self.top_module)),
-                    os.path.join(self.run_dir, "{top}.hold.par.spef".format(top=self.top_module))]
+        corners = self.get_mmmc_corners()
+        if corners:
+            # Order matters in tool consuming spefs (ensured here by get_mmmc_corners())!
+            return list(map(lambda c: os.path.join(self.run_dir, "{top}.{corner}.par.spef".format(top=self.top_module, corner=c.name)), corners))
         else:
             return [os.path.join(self.run_dir, "{top}.par.spef".format(top=self.top_module))]
 
@@ -663,17 +659,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         corners = self.get_mmmc_corners()
         if corners:
             for corner in corners:
+                # Setting up views for all defined corner types: setup, hold, extra
                 if corner.type is MMMCCornerType.Setup:
-                    setup_corner_name = "{cname}.setup_rc".format(cname=corner.name)
-                    self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.setup.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=setup_corner_name))
+                    corner_type_name = "setup"
                 elif corner.type is MMMCCornerType.Hold:
-                    hold_corner_name = "{cname}.hold_rc".format(cname=corner.name)
-                    self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name))
+                    corner_type_name = "hold"
                 elif corner.type is MMMCCornerType.Extra:
-                    extra_corner_name = "{cname}.extra_rc".format(cname=corner.name)
-                    self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.extra.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=extra_corner_name))
+                    corner_type_name = "extra"
                 else:
                     raise ValueError("Unsupported MMMCCornerType")
+
+                self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.{cname}.par.spef -rc_corner {cname}.{ctype}_rc".format(run_dir=self.run_dir, top=self.top_module, cname=corner.name, ctype=corner_type_name))
+
         else:
             self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.par.spef".format(run_dir=self.run_dir, top=self.top_module))
 

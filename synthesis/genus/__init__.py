@@ -312,12 +312,13 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         verbose_append("write_hdl > {}".format(self.mapped_v_path))
         verbose_append("write_script > {}.mapped.scr".format(top))
-        # TODO: remove hardcoded my_view string
-        view_name = "my_view"
         corners = self.get_mmmc_corners()
-        for corner in corners:
-            if corner.type is MMMCCornerType.Setup:
-                view_name = "{cname}.setup_view".format(cname=corner.name)
+        if corners:
+            # First setup corner is default view
+            view_name="{cname}.setup_view".format(cname=next(filter(lambda c: c.type is MMMCCornerType.Setup, corners)).name)
+        else:
+            # TODO: remove hardcoded my_view string
+            view_name = "my_view"
         verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
 
         verbose_append("write_sdf > {run_dir}/{top}.mapped.sdf".format(run_dir=self.run_dir, top=top))

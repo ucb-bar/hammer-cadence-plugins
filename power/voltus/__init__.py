@@ -73,56 +73,46 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_power_pads -net {VDD} -format defpin".format(VDD=vdd_net))
         verbose_append("set_power_pads -net {VSS} -format defpin".format(VSS=vss_net))
 
-        # TODO (daniel) deal with multiple corners
         corners = self.get_mmmc_corners()
         if corners:
+            setup_view_names = [] # type: List[str]
+            hold_view_names = [] # type: List[str]
+            extra_view_names = [] # type: List[str]
+            rc_corners = [] # type: List[str]
             for corner in corners:
+                # Setting up views for all defined corner types: setup, hold, extra
                 if corner.type is MMMCCornerType.Setup:
-                    setup_view_name = "{cname}.setup_view".format(cname=corner.name)
-                    setup_spef_name = "{cname}.setup_rc".format(cname=corner.name)
+                    corner_name = "{n}.{t}".format(n=corner.name, t="setup")
+                    setup_view_names.append("{n}_view".format(n=corner_name))
                 elif corner.type is MMMCCornerType.Hold:
-                    hold_view_name = "{cname}.hold_view".format(cname=corner.name)
-                    hold_spef_name = "{cname}.hold_rc".format(cname=corner.name)
+                    corner_name = "{n}.{t}".format(n=corner.name, t="hold")
+                    hold_view_names.append("{n}_view".format(n=corner_name))
                 elif corner.type is MMMCCornerType.Extra:
-                    extra_view_name = "{cname}.extra_view".format(cname=corner.name)
-                    extra_spef_name = "{cname}.extra_rc".format(cname=corner.name)
+                    corner_name = "{n}.{t}".format(n=corner.name, t="extra")
+                    extra_view_names.append("{n}_view".format(n=corner_name))
                 else:
                     raise ValueError("Unsupported MMMCCornerType")
-            if any(corner.type is MMMCCornerType.Extra for corner in corners): # if the extra view is defined
-                verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name, EXTRA_VIEW=extra_view_name))
-            else:
-                verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name))
+                rc_corners.append("{n}_rc".format(n=corner_name))
+
+            # Apply analysis views
+            # TODO: should not need to analyze extra views as well. Defaulting to hold for now (min. runtime impact).
+            append_mmmc("set_analysis_view -setup {{ {setup_views} }} -hold {{ {hold_views} {extra_views} }}".format(
+                setup_views=" ".join(setup_view_names),
+                hold_views=" ".join(hold_view_names),
+                extra_views=" ".join(extra_view_names)
+            ))
+            # Match spefs with corners. Ordering must match (ensured here by get_mmmc_corners())!
+            for (spef, rc_corner) in zip(self.spefs, rc_corners):
+                verbose_append("read_spef {spef} -rc_corner {corner}".format(spef=os.path.join(os.getcwd(), spef), corner=rc_corner))
 
         else:
+            # TODO: remove hardcoded my_view string
+            analysis_view_name = "my_view"
+            append_mmmc("set_analysis_view -setup {{ {setup_view} }} -hold {{ {hold_view} }}".format(
+                setup_view=analysis_view_name,
+                hold_view=analysis_view_name
+            ))
             verbose_append("read_spef " + os.path.join(os.getcwd(), self.spefs[0]))
-
-
-
-        # TODO (daniel) deal with multiple corners
-        corners = self.get_mmmc_corners()
-        corner_names = []
-        for corner in corners:
-            if corner.type is MMMCCornerType.Setup:
-                setup_view_name = "{cname}.setup_view".format(cname=corner.name)
-                setup_spef_name = "{cname}.setup_rc".format(cname=corner.name)
-                corner_names.append(setup_spef_name)
-            elif corner.type is MMMCCornerType.Hold:
-                hold_view_name = "{cname}.hold_view".format(cname=corner.name)
-                hold_spef_name = "{cname}.hold_rc".format(cname=corner.name)
-                corner_names.append(hold_spef_name)
-            elif corner.type is MMMCCornerType.Extra:
-                extra_view_name = "{cname}.extra_view".format(cname=corner.name)
-                extra_spef_name = "{cname}.extra_rc".format(cname=corner.name)
-                corner_names.append(extra_spef_name)
-            else:
-                raise ValueError("Unsupported MMMCCornerType")
-        if any(corner.type is MMMCCornerType.Extra for corner in corners): # if the extra view is defined
-            verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {{ {HOLD_VIEW} {EXTRA_VIEW} {SETUP_VIEW}}}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name, EXTRA_VIEW=extra_view_name)) # add extra for leakage if exists
-        else:
-            verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name))
-
-        for (spef, rc_corner) in zip(self.spefs, corner_names):
-            verbose_append("read_spef {spef} -rc_corner {corner}".format(spef=os.path.join(os.getcwd(), spef), corner=rc_corner))
 
         return True
 
