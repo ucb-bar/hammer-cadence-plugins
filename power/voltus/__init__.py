@@ -96,7 +96,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
             # Apply analysis views
             # TODO: should not need to analyze extra views as well. Defaulting to hold for now (min. runtime impact).
-            append_mmmc("set_analysis_view -setup {{ {setup_views} }} -hold {{ {hold_views} {extra_views} }}".format(
+            verbose_append("set_analysis_view -setup {{ {setup_views} }} -hold {{ {hold_views} {extra_views} }}".format(
                 setup_views=" ".join(setup_view_names),
                 hold_views=" ".join(hold_view_names),
                 extra_views=" ".join(extra_view_names)
@@ -108,7 +108,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         else:
             # TODO: remove hardcoded my_view string
             analysis_view_name = "my_view"
-            append_mmmc("set_analysis_view -setup {{ {setup_view} }} -hold {{ {hold_view} }}".format(
+            verbose_append("set_analysis_view -setup {{ {setup_view} }} -hold {{ {hold_view} }}".format(
                 setup_view=analysis_view_name,
                 hold_view=analysis_view_name
             ))
@@ -125,7 +125,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Report based on MMMC mode
         corners = self.get_mmmc_corners()
-        extra_corners_only = self.get_setting("vlsi.inputs.extra_corners_only")
+        extra_corners_only = self.get_setting("power.inputs.extra_corners_only")
         if not corners:
             if extra_corners_only:
                 self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting static power for default analysis view only.")
@@ -161,7 +161,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Check MMMC mode
         corners = self.get_mmmc_corners()
-        extra_corners_only = self.get_setting("vlsi.inputs.extra_corners_only")
+        extra_corners_only = self.get_setting("power.inputs.extra_corners_only")
         if not corners:
             if extra_corners_only:
                 self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting active power for default analysis view only.")
