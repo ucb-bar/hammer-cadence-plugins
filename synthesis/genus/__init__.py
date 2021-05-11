@@ -296,7 +296,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # If there is more than 1 corner or a certain type, use lib cells for only the active analysis view
         corner_counts = Counter(list(map(lambda c: c.type, self.get_mmmc_corners())))
         if any(cnt>1 for cnt in corner_counts.values()):
-            self.verbose_append("set ACTIVE_VIEW [string map {.setup_view "" .hold_view "" .extra_view ""} [get_db analysis_view:[get_analysis_views] .name]]")
+            self.verbose_append("set ACTIVE_VIEW [string map { .setup_view {} .hold_view {} .extra_view {} } [get_db analysis_view:[get_analysis_views] .name]]")
             self.verbose_append("set HI_TIEOFF [get_db base_cell:{TIE_HI_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_HI_CELL=tie_hi_cell))
             self.verbose_append("set LO_TIEOFF [get_db base_cell:{TIE_LO_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_LO_CELL=tie_lo_cell))
             self.verbose_append("add_tieoffs -high $HI_TIEOFF -low $LO_TIEOFF -max_fanout 1 -verbose")
