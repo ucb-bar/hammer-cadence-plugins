@@ -563,13 +563,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             top=self.top_module,
             pcells=" ".join(self.get_physical_only_cells())
         ))
-
-        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -exclude_insts_of_cells {{ {pcells} }} ".format(
+        
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("flatten_ilm")
+        self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -exclude_insts_of_cells {{ {pcells} }} {ilm} ".format(
             netlist=self.output_sim_netlist_filename,
             top=self.top_module,
-            pcells=" ".join(self.get_physical_only_cells())
+            pcells=" ".join(self.get_physical_only_cells()),
+            ilm="-ilm" if (self.hierarchical_mode.is_nonleaf_hierarchical()) else ""
         ))
-
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.verbose_append("unflatten_ilm")
+        
         return True
 
     def write_gds(self) -> bool:
