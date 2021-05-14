@@ -563,7 +563,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             top=self.top_module,
             pcells=" ".join(self.get_physical_only_cells())
         ))
-        
+
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             self.verbose_append("flatten_ilm")
         self.verbose_append("write_netlist {netlist} -top_module_first -top_module {top} -exclude_leaf_cells -exclude_insts_of_cells {{ {pcells} }} {ilm} ".format(
@@ -574,7 +574,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         ))
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             self.verbose_append("unflatten_ilm")
-        
+
         return True
 
     def write_gds(self) -> bool:
@@ -686,6 +686,9 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.append(self.child_modules_tcl())
+            self.append('flatten_ilm')
         self.append(self.write_regs_tcl())
         self.ran_write_regs = True
         return True
