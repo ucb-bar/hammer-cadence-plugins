@@ -307,7 +307,7 @@ if {{ {get_db_str} ne "" }} {{
             return '''
             set child_modules_ir "./find_child_modules.json"
             set child_modules_ir [open $child_modules_ir "w"]
-            puts $child_modules_ir "\{{\}}"
+            puts $child_modules_ir "\{\}"
             close $child_modules_ir
             '''
         else:
