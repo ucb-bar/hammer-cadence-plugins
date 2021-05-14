@@ -304,7 +304,12 @@ if {{ {get_db_str} ne "" }} {{
             Hierarchical write_regs requires having vlsi.inputs.hierarchical.manual_modules specified.
             You may have problems with register forcing in gate-level sim.
             ''')
-            return ""
+            return '''
+            set child_modules_ir "./find_child_modules.json"
+            set child_modules_ir [open $child_modules_ir "w"]
+            puts $child_modules_ir "\{{\}}"
+            close $child_modules_ir
+            '''
         else:
             # Write out the paths to all child find_regs_paths.json files
             child_modules = list(next(d for i,d in enumerate(self.get_setting("vlsi.inputs.hierarchical.manual_modules")) if self.top_module in d).values())[0]
