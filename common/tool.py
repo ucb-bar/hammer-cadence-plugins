@@ -4,7 +4,7 @@ import os
 import json
 import copy
 
-from hammer_vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool
+from hammer_vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, ILMStruct
 from hammer_vlsi.constraints import MMMCCorner, MMMCCornerType
 from hammer_utils import optional_map, add_dicts
 import hammer_tech
