@@ -497,10 +497,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             self.verbose_append('''
             flatten_ilm
-            set_interactive_constraint_modes [all_constraint_modes]
-            source clock_constraints_fragment.sdc
-            source pin_constraints_fragment.sdc
-            ''', clean=True)
+            update_constraint_mode -name my_constraint_mode -ilm_sdc_files {sdc}
+            '''.format(sdc=self.post_synth_sdc), clean=True)
         if len(self.get_clock_ports()) > 0:
             # Ignore clock tree when there are no clocks
             self.verbose_append("create_clock_tree_spec")
