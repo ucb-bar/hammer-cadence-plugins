@@ -302,6 +302,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.append(self.child_modules_tcl())
         self.append(self.write_regs_tcl())
         self.ran_write_regs = True
         return True
