@@ -19,6 +19,7 @@ from specialcells import CellType, SpecialCell
 
 import os
 import json
+from collections import Counter
 
 import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
@@ -48,11 +49,11 @@ class Genus(HammerSynthesisTool, CadenceTool):
             self.logger.info("Did not run write_regs")
 
         # Check that the synthesis outputs exist if the synthesis run was successful
+        mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
         self.output_files = [mapped_v]
         self.output_sdc = self.mapped_sdc_path
         self.sdf_file = self.output_sdf_path
         if self.ran_write_outputs:
-            mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
             if not os.path.isfile(mapped_v):
                 raise ValueError("Output mapped verilog %s not found" % (mapped_v)) # better error?
 
@@ -291,7 +292,16 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # Limit "no delay description exists" warnings
         self.verbose_append("set_db message:WSDF-201 .max_print 20")
         self.verbose_append("set_db use_tiehilo_for_const duplicate")
-        self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
+
+        # If there is more than 1 corner or a certain type, use lib cells for only the active analysis view
+        corner_counts = Counter(list(map(lambda c: c.type, self.get_mmmc_corners())))
+        if any(cnt>1 for cnt in corner_counts.values()):
+            self.verbose_append("set ACTIVE_VIEW [string map { .setup_view {} .hold_view {} .extra_view {} } [get_db analysis_view:[get_analysis_views] .name]]")
+            self.verbose_append("set HI_TIEOFF [get_db base_cell:{TIE_HI_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_HI_CELL=tie_hi_cell))
+            self.verbose_append("set LO_TIEOFF [get_db base_cell:{TIE_LO_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_LO_CELL=tie_lo_cell))
+            self.verbose_append("add_tieoffs -high $HI_TIEOFF -low $LO_TIEOFF -max_fanout 1 -verbose")
+        else:
+            self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
         return True
 
     def generate_reports(self) -> bool:
@@ -314,12 +324,13 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         verbose_append("write_hdl > {}".format(self.mapped_v_path))
         verbose_append("write_script > {}.mapped.scr".format(top))
-        # TODO: remove hardcoded my_view string
-        view_name = "my_view"
         corners = self.get_mmmc_corners()
-        for corner in corners:
-            if corner.type is MMMCCornerType.Setup:
-                view_name = "{cname}.setup_view".format(cname=corner.name)
+        if corners:
+            # First setup corner is default view
+            view_name="{cname}.setup_view".format(cname=next(filter(lambda c: c.type is MMMCCornerType.Setup, corners)).name)
+        else:
+            # TODO: remove hardcoded my_view string
+            view_name = "my_view"
         verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
 
         verbose_append("write_sdf > {run_dir}/{top}.mapped.sdf".format(run_dir=self.run_dir, top=top))
