@@ -399,7 +399,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_db design_process_node {}".format(self.get_setting("vlsi.core.node")))
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
-        innovus_db = os.path.join(os.getcwd(), self.par_database)
+        innovus_db = os.path.join(os.getcwd(), self.flow_database)
         if innovus_db is None or not os.path.isdir(innovus_db):
             raise ValueError("Innovus database %s not found" % (innovus_db))
 
