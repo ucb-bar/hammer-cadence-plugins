@@ -307,6 +307,7 @@ if {{ {get_db_str} ne "" }} {{
             child_modules = list(next(d for i,d in enumerate(self.get_setting("vlsi.inputs.hierarchical.manual_modules")) if self.top_module in d).values())[0]
 
             # Get all paths to the child module instances
+            # For P&R, this only works in the flattened ILM state
             return '''
             set child_modules_ir "./find_child_modules.json"
             set child_modules_ir [open $child_modules_ir "w"]
@@ -317,7 +318,7 @@ if {{ {get_db_str} ne "" }} {{
 
             for {{set i 0}} {{$i < $numcells}} {{incr i}} {{
                 set cell [lindex $cells $i]
-                set inst_paths [get_db [get_db insts -if {{.base_cell==base_cell:$cell}}] .name]
+                set inst_paths [get_db [get_db modules -if {{.name==$cell}}] .hinsts.name]
                 set inst_paths [join $inst_paths "\\", \\""]
                 if {{$i == $numcells - 1}} {{
                     puts $child_modules_ir "    \\"$cell\\": \\[\\"$inst_paths\\"\\]"

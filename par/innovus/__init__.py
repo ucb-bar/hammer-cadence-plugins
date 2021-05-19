@@ -61,7 +61,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 ILMStruct(dir=self.ilm_dir_name, data_dir=ilm_data_dir, module=self.top_module,
                           lef=os.path.join(self.run_dir, "{top}ILM.lef".format(top=self.top_module)),
                           gds=self.output_gds_filename,
-                          netlist=self.output_netlist_filename)
+                          netlist=self.output_netlist_filename,
+                          sim_netlist=self.output_sim_netlist_filename)
             ]
         else:
             self.output_ilms = []
@@ -690,8 +691,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
         if self.hierarchical_mode.is_nonleaf_hierarchical():
-            self.append(self.child_modules_tcl())
             self.append('flatten_ilm')
+            self.append(self.child_modules_tcl())
         self.append(self.write_regs_tcl())
         self.ran_write_regs = True
         return True
