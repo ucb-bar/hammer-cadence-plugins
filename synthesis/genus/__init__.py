@@ -276,6 +276,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def syn_map(self) -> bool:
         self.verbose_append("syn_map")
+        # Need to suffix modules for hierarchical simulation if not top
+        if self.hierarchical_mode not in [HierarchicalMode.Flat, HierarchicalMode.Top]:
+            self.verbose_append("update_names -module -log hier_updated_names.log -suffix _{MODULE}".format(MODULE=self.top_module))
         return True
 
     def add_tieoffs(self) -> bool:
