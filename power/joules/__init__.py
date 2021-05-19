@@ -116,20 +116,39 @@ class Joules(HammerPowerTool, CadenceTool):
         reports = self.get_power_report_configs()
         custom_reports = self.get_setting("power.inputs.custom_reports")
 
+        # TODO: These times should be either auto calculated/read from the inputs or moved into the same structure as a tuple
+        start_times = self.get_setting("power.inputs.start_times")
+        end_times = self.get_setting("power.inputs.end_times")
+
         # Reading stimulus
         waveforms = self.get_setting("power.inputs.waveforms")
-        for wave in waveforms:
+        for i in range(len(waveforms)):
+            wave = waveforms[i]
             wave_basename = os.path.basename(wave)
             stims.append(wave_basename)
 
             # general waveform report
-            verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, NAME=wave_basename))
+            if not start_times:
+                verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, NAME=wave_basename))
+            else:
+                stime_ns = TimeValue(start_times[i]).value_in_units("ns")
+                #etime_ns = TimeValue(end_times[i]).value_in_units("ns")
+                verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -start {STIME}ns -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, STIME=stime_ns, NAME=wave_basename))
+
+            #verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, NAME=wave_basename))
 
             # specified reports
             report_count = 0
             for report in reports:
-                verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles {COUNT} {SIGNAL} -alias {NAME}_{NUM} -append".format(VCD=wave, TB=tb_name,
-                    DUT=tb_dut, COUNT=report.num_toggles, SIGNAL=report.toggle_signal, NAME=wave_basename, NUM=str(report_count)))
+                if not start_times:
+                    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles {COUNT} {SIGNAL} -alias {NAME}_{NUM} -append".format(VCD=wave, TB=tb_name,
+                        DUT=tb_dut, COUNT=report.num_toggles, SIGNAL=report.toggle_signal, NAME=wave_basename, NUM=str(report_count)))
+                else:
+                    stime_ns = TimeValue(start_times[i]).value_in_units("ns")
+                    #etime_ns = TimeValue(end_times[i]).value_in_units("ns")
+                    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -start {STIME}ns -cycles {COUNT} {SIGNAL} -alias {NAME}_{NUM} -append".format(VCD=wave, TB=tb_name,
+                        DUT=tb_dut, STIME=stime_ns, COUNT=report.num_toggles, SIGNAL=report.toggle_signal, NAME=wave_basename, NUM=str(report_count)))
+
                 report_count += 1
 
 
