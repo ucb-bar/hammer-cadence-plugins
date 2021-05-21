@@ -694,6 +694,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.append('flatten_ilm')
             self.append(self.child_modules_tcl())
         self.append(self.write_regs_tcl())
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.append('unflatten_ilm')
         self.ran_write_regs = True
         return True
 
