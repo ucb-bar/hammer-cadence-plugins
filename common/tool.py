@@ -2,8 +2,9 @@ from functools import reduce
 from typing import List, Optional, Dict, Any, Callable
 import os
 import json
+import copy
 
-from hammer_vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool
+from hammer_vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, ILMStruct
 from hammer_vlsi.constraints import MMMCCorner, MMMCCornerType
 from hammer_utils import optional_map, add_dicts
 import hammer_tech
@@ -128,63 +129,56 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
         corners = self.get_mmmc_corners()  # type: List[MMMCCorner]
         # In parallel, create the delay corners
         if corners:
-            setup_corner = corners[0]  # type: MMMCCorner
-            hold_corner = corners[0]  # type: MMMCCorner
-            # TODO(colins): handle more than one corner and do something with extra corners
+            setup_view_names = [] # type: List[str]
+            hold_view_names = [] # type: List[str]
+            extra_view_names = [] # type: List[str]
             for corner in corners:
+                # Setting up views for all defined corner types: setup, hold, extra
                 if corner.type is MMMCCornerType.Setup:
-                    setup_corner = corner
-                if corner.type is MMMCCornerType.Hold:
-                    hold_corner = corner
+                    corner_name = "{n}.{t}".format(n=corner.name, t="setup")
+                    setup_view_names.append("{n}_view".format(n=corner_name))
+                elif corner.type is MMMCCornerType.Hold:
+                    corner_name = "{n}.{t}".format(n=corner.name, t="hold")
+                    hold_view_names.append("{n}_view".format(n=corner_name))
+                elif corner.type is MMMCCornerType.Extra:
+                    corner_name = "{n}.{t}".format(n=corner.name, t="extra")
+                    extra_view_names.append("{n}_view".format(n=corner_name))
+                else:
+                    raise ValueError("Unsupported MMMCCornerType")
 
-            # First, create Innovus library sets
-            append_mmmc("create_library_set -name {name} -timing [list {list}]".format(
-                name="{n}.setup_set".format(n=setup_corner.name),
-                list=self.get_timing_libs(setup_corner)
-            ))
-            append_mmmc("create_library_set -name {name} -timing [list {list}]".format(
-                name="{n}.hold_set".format(n=hold_corner.name),
-                list=self.get_timing_libs(hold_corner)
-            ))
-            # Skip opconds for now
-            # Next, create Innovus timing conditions
-            append_mmmc("create_timing_condition -name {name} -library_sets [list {list}]".format(
-                name="{n}.setup_cond".format(n=setup_corner.name),
-                list="{n}.setup_set".format(n=setup_corner.name)
-            ))
-            append_mmmc("create_timing_condition -name {name} -library_sets [list {list}]".format(
-                name="{n}.hold_cond".format(n=hold_corner.name),
-                list="{n}.hold_set".format(n=hold_corner.name)
-            ))
-            # Next, create Innovus rc corners from qrc tech files
-            append_mmmc("create_rc_corner -name {name} -temperature {tempInCelsius} {qrc}".format(
-                name="{n}.setup_rc".format(n=setup_corner.name),
-                tempInCelsius=str(setup_corner.temp.value),
-                qrc="-qrc_tech {}".format(self.get_mmmc_qrc(setup_corner)) if self.get_mmmc_qrc(setup_corner) != '' else ''
-            ))
-            append_mmmc("create_rc_corner -name {name} -temperature {tempInCelsius} {qrc}".format(
-                name="{n}.hold_rc".format(n=hold_corner.name),
-                tempInCelsius=str(hold_corner.temp.value),
-                qrc="-qrc_tech {}".format(self.get_mmmc_qrc(hold_corner)) if self.get_mmmc_qrc(hold_corner) != '' else ''
-            ))
-            # Next, create an Innovus delay corner.
-            append_mmmc(
-                "create_delay_corner -name {name}_delay -timing_condition {name}_cond -rc_corner {name}_rc".format(
-                    name="{n}.setup".format(n=setup_corner.name)
+                # First, create Innovus library sets
+                append_mmmc("create_library_set -name {name}_set -timing [list {list}]".format(
+                    name=corner_name,
+                    list=self.get_timing_libs(corner)
                 ))
-            append_mmmc(
-                "create_delay_corner -name {name}_delay -timing_condition {name}_cond -rc_corner {name}_rc".format(
-                    name="{n}.hold".format(n=hold_corner.name)
+                # Skip opconds for now
+                # Next, create Innovus timing conditions
+                append_mmmc("create_timing_condition -name {name}_cond -library_sets [list {name}_set]".format(
+                    name=corner_name
                 ))
-            # Next, create the analysis views
-            append_mmmc("create_analysis_view -name {name}_view -delay_corner {name}_delay -constraint_mode {constraint}".format(
-                name="{n}.setup".format(n=setup_corner.name), constraint=constraint_mode))
-            append_mmmc("create_analysis_view -name {name}_view -delay_corner {name}_delay -constraint_mode {constraint}".format(
-                name="{n}.hold".format(n=hold_corner.name), constraint=constraint_mode))
+                # Next, create Innovus rc corners from qrc tech files
+                append_mmmc("create_rc_corner -name {name}_rc -temperature {tempInCelsius} {qrc}".format(
+                    name=corner_name,
+                    tempInCelsius=str(corner.temp.value),
+                    qrc="-qrc_tech {}".format(self.get_mmmc_qrc(corner)) if self.get_mmmc_qrc(corner) != '' else ''
+                ))
+                # Next, create an Innovus delay corner.
+                append_mmmc(
+                    "create_delay_corner -name {name}_delay -timing_condition {name}_cond -rc_corner {name}_rc".format(
+                        name=corner_name
+                ))
+                # Next, create the analysis views
+                append_mmmc("create_analysis_view -name {name}_view -delay_corner {name}_delay -constraint_mode {constraint}".format(
+                    name=corner_name,
+                    constraint=constraint_mode
+                ))
+
             # Finally, apply the analysis view.
-            append_mmmc("set_analysis_view -setup {{ {setup_view} }} -hold {{ {hold_view} }}".format(
-                setup_view="{n}.setup_view".format(n=setup_corner.name),
-                hold_view="{n}.hold_view".format(n=hold_corner.name)
+            # TODO: should not need to analyze extra views as well. Defaulting to hold for now (min. runtime impact).
+            append_mmmc("set_analysis_view -setup {{ {setup_views} }} -hold {{ {hold_views} {extra_views} }}".format(
+                setup_views=" ".join(setup_view_names),
+                hold_views=" ".join(hold_view_names),
+                extra_views=" ".join(extra_view_names)
             ))
         else:
             # First, create an Innovus library set.
@@ -201,9 +195,8 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
             ))
             # extra junk: -opcond ...
             rc_corner_name = "rc_cond"
-            append_mmmc("create_rc_corner -name {name} -temperature {tempInCelsius} {qrc}".format(
+            append_mmmc("create_rc_corner -name {name} {qrc}".format(
                 name=rc_corner_name,
-                tempInCelsius=120,  # TODO: this should come from tech config
                 qrc="-qrc_tech {}".format(self.get_qrc_tech()) if self.get_qrc_tech() != '' else ''
             ))
             # Next, create an Innovus delay corner.
@@ -293,13 +286,59 @@ if {{ {get_db_str} ne "" }} {{
         return ["read_power_intent -{arg} {path}".format(arg=power_spec_arg, path=power_spec_file),
                 "commit_power_intent"]
 
+    def child_modules_tcl(self) -> str:
+        """
+        Dumps a list of child instance paths and their ilm directories.
+        Should only be called when self.hierarchical_mode.is_nonleaf_hierarchical()
+        """
+        if self.get_setting("vlsi.inputs.hierarchical.config_source") != "manual":
+            self.logger.warning('''
+            Hierarchical write_regs requires having vlsi.inputs.hierarchical.manual_modules specified.
+            You may have problems with register forcing in gate-level sim.
+            ''')
+            return '''
+            set child_modules_ir "./find_child_modules.json"
+            set child_modules_ir [open $child_modules_ir "w"]
+            puts $child_modules_ir "\{\}"
+            close $child_modules_ir
+            '''
+        else:
+            # Write out the paths to all child find_regs_paths.json files
+            child_modules = list(next(d for i,d in enumerate(self.get_setting("vlsi.inputs.hierarchical.manual_modules")) if self.top_module in d).values())[0]
+
+            # Get all paths to the child module instances
+            # For P&R, this only works in the flattened ILM state
+            return '''
+            set child_modules_ir "./find_child_modules.json"
+            set child_modules_ir [open $child_modules_ir "w"]
+            puts $child_modules_ir "\{{"
+
+            set cells {{ {CELLS} }}
+            set numcells [llength $cells]
+
+            for {{set i 0}} {{$i < $numcells}} {{incr i}} {{
+                set cell [lindex $cells $i]
+                set inst_paths [get_db [get_db modules -if {{.name==$cell}}] .hinsts.name]
+                set inst_paths [join $inst_paths "\\", \\""]
+                if {{$i == $numcells - 1}} {{
+                    puts $child_modules_ir "    \\"$cell\\": \\[\\"$inst_paths\\"\\]"
+                }} else {{
+                    puts $child_modules_ir "    \\"$cell\\": \\[\\"$inst_paths\\"\\],"
+                }}
+            }}
+
+            puts $child_modules_ir "\}}"
+
+            close $child_modules_ir
+            '''.format(CELLS=" ".join(child_modules))
+
     def write_regs_tcl(self) -> str:
         return '''
         set write_cells_ir "./find_regs_cells.json"
         set write_cells_ir [open $write_cells_ir "w"]
         puts $write_cells_ir "\["
 
-        set refs [get_db [get_db lib_cells -if .is_flop==true] .base_name]
+        set refs [get_db [get_db lib_cells -if .is_sequential==true] .base_name]
 
         set len [llength $refs]
 
@@ -344,11 +383,32 @@ if {{ {get_db_str} ne "" }} {{
             assert isinstance(reg_paths, List), "Output find_regs_paths.json should be a json list of strings"
             for i in range(len(reg_paths)):
                 split = reg_paths[i].split("/")
+                # If the net is part of a generate block, the generated names have a "." in them and the whole name
+                # needs to be escaped.
+                for index, node in enumerate(split):
+                    if "." in node:
+                        split[index] = "\\" + node + "\\"
+                # If the last net is part of a bus, it needs to be escaped
                 if split[-2][-1] == "]":
                     split[-2] = "\\" + split[-2]
                     reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
                 else:
                     reg_paths[i] = {"path" : '/'.join(split[0:len(split)-1]), "pin" : split[-1]}
+
+            # For parent hierarchical modules, append all child instance regs
+            if self.hierarchical_mode.is_nonleaf_hierarchical():
+                with open(os.path.join(os.path.dirname(path), "find_child_modules.json"), "r") as cmf:
+                    mod_paths = json.load(cmf)
+                for mod_path in mod_paths.items():
+                    ilm = next(i for i in self.get_input_ilms() if i.module == mod_path[0])  # type: ILMStruct
+                    with open(os.path.join(os.path.dirname(ilm.dir), "find_regs_paths.json"), "r") as crf:
+                        child_regs = json.load(crf)
+                    for inst_path in mod_path[1]:
+                        prefixed_regs = copy.deepcopy(child_regs)
+                        for reg in prefixed_regs:
+                            reg.update({'path': os.path.join(inst_path, reg['path'])})
+                        reg_paths.extend(prefixed_regs)
+
             f.seek(0) # Move to beginning to rewrite file
             json.dump(reg_paths, f, indent=2) # Elide the truncation because we are always increasing file size
         return True

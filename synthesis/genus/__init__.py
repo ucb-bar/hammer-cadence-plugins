@@ -19,6 +19,7 @@ from specialcells import CellType, SpecialCell
 
 import os
 import json
+from collections import Counter
 
 import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
@@ -32,36 +33,37 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return None
 
     def fill_outputs(self) -> bool:
-        # Check that the mapped.v exists if the synthesis run was successful
-        # TODO: move this check upwards?
-        if not self.ran_write_outputs:
-            self.logger.info("Did not run write_outputs")
-            return True
-
-        mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
-        if not os.path.isfile(mapped_v):
-            raise ValueError("Output mapped verilog %s not found" % (mapped_v)) # better error?
-        self.output_files = [mapped_v]
-
-        if not os.path.isfile(self.mapped_sdc_path):
-            raise ValueError("Output SDC %s not found" % (self.mapped_sdc_path)) # better error?
-        self.output_sdc = self.mapped_sdc_path
-
-        if not os.path.isfile(self.all_cells_path):
-            raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
+        # Check that the regs paths were written properly if the write_regs step was run
         self.output_seq_cells = self.all_cells_path
-
-        if not os.path.isfile(self.all_regs_path):
-            raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
         self.output_all_regs = self.all_regs_path
+        if self.ran_write_regs:
+            if not os.path.isfile(self.all_cells_path):
+                raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
 
-        if not self.process_reg_paths(self.all_regs_path):
-            self.logger.error("Failed to process all register paths")
+            if not os.path.isfile(self.all_regs_path):
+                raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
 
-        if not os.path.isfile(self.output_sdf_path):
-            raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+            if not self.process_reg_paths(self.all_regs_path):
+                self.logger.error("Failed to process all register paths")
+        else:
+            self.logger.info("Did not run write_regs")
 
+        # Check that the synthesis outputs exist if the synthesis run was successful
+        mapped_v = self.mapped_hier_v_path if self.hierarchical_mode.is_nonleaf_hierarchical() else self.mapped_v_path
+        self.output_files = [mapped_v]
+        self.output_sdc = self.mapped_sdc_path
         self.sdf_file = self.output_sdf_path
+        if self.ran_write_outputs:
+            if not os.path.isfile(mapped_v):
+                raise ValueError("Output mapped verilog %s not found" % (mapped_v)) # better error?
+
+            if not os.path.isfile(self.mapped_sdc_path):
+                raise ValueError("Output SDC %s not found" % (self.mapped_sdc_path)) # better error?
+
+            if not os.path.isfile(self.output_sdf_path):
+                raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+        else:
+            self.logger.info("Did not run write_outputs")
 
         return True
 
@@ -140,8 +142,17 @@ class Genus(HammerSynthesisTool, CadenceTool):
         return os.path.join(self.run_dir, "{top}.mapped.sdf".format(top=self.top_module))
 
     @property
+    def ran_write_regs(self) -> bool:
+        """The write_regs step sets this to True if it was run."""
+        return self.attr_getter("_ran_write_regs", False)
+
+    @ran_write_regs.setter
+    def ran_write_regs(self, val: bool) -> None:
+        self.attr_setter("_ran_write_regs", val)
+
+    @property
     def ran_write_outputs(self) -> bool:
-        """The write_outputs stage sets this to True if it was run."""
+        """The write_outputs step sets this to True if it was run."""
         return self.attr_getter("_ran_write_outputs", False)
 
     @ran_write_outputs.setter
@@ -265,6 +276,9 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def syn_map(self) -> bool:
         self.verbose_append("syn_map")
+        # Need to suffix modules for hierarchical simulation if not top
+        if self.hierarchical_mode not in [HierarchicalMode.Flat, HierarchicalMode.Top]:
+            self.verbose_append("update_names -module -log hier_updated_names.log -suffix _{MODULE}".format(MODULE=self.top_module))
         return True
 
     def add_tieoffs(self) -> bool:
@@ -281,7 +295,16 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # Limit "no delay description exists" warnings
         self.verbose_append("set_db message:WSDF-201 .max_print 20")
         self.verbose_append("set_db use_tiehilo_for_const duplicate")
-        self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
+
+        # If there is more than 1 corner or a certain type, use lib cells for only the active analysis view
+        corner_counts = Counter(list(map(lambda c: c.type, self.get_mmmc_corners())))
+        if any(cnt>1 for cnt in corner_counts.values()):
+            self.verbose_append("set ACTIVE_VIEW [string map { .setup_view {} .hold_view {} .extra_view {} } [get_db analysis_view:[get_analysis_views] .name]]")
+            self.verbose_append("set HI_TIEOFF [get_db base_cell:{TIE_HI_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_HI_CELL=tie_hi_cell))
+            self.verbose_append("set LO_TIEOFF [get_db base_cell:{TIE_LO_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_LO_CELL=tie_lo_cell))
+            self.verbose_append("add_tieoffs -high $HI_TIEOFF -low $LO_TIEOFF -max_fanout 1 -verbose")
+        else:
+            self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
         return True
 
     def generate_reports(self) -> bool:
@@ -292,7 +315,10 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.append(self.child_modules_tcl())
         self.append(self.write_regs_tcl())
+        self.ran_write_regs = True
         return True
 
     def write_outputs(self) -> bool:
@@ -301,12 +327,13 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         verbose_append("write_hdl > {}".format(self.mapped_v_path))
         verbose_append("write_script > {}.mapped.scr".format(top))
-        # TODO: remove hardcoded my_view string
-        view_name = "my_view"
         corners = self.get_mmmc_corners()
-        for corner in corners:
-            if corner.type is MMMCCornerType.Setup:
-                view_name = "{cname}.setup_view".format(cname=corner.name)
+        if corners:
+            # First setup corner is default view
+            view_name="{cname}.setup_view".format(cname=next(filter(lambda c: c.type is MMMCCornerType.Setup, corners)).name)
+        else:
+            # TODO: remove hardcoded my_view string
+            view_name = "my_view"
         verbose_append("write_sdc -view {view} > {file}".format(view=view_name, file=self.mapped_sdc_path))
 
         verbose_append("write_sdf > {run_dir}/{top}.mapped.sdf".format(run_dir=self.run_dir, top=top))

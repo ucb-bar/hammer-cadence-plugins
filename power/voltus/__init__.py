@@ -147,7 +147,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                     options.extend(["-spice_models", "/home/ff/ee241/spring21-labs/asap7PDK_r1p5/models/hspice/7nm_SS.pm"])
                 else:
                     options.extend(["-spice_models", "/home/ff/ee241/spring21-labs/asap7PDK_r1p5/models/hspice/7nm_FF.pm"])
-                    
+
                 verbose_append("set_pg_library_mode {}".format(" ".join(options)))
                 verbose_append("write_pg_library -out_dir {}".format(os.path.join(self.stdcell_lib_dir, corner.name)))
                 self.ran_stdcell_pgv = True
@@ -166,7 +166,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         if (not os.path.isdir(self.macro_lib_dir) or extra_lib_lefs != prior_extra_lib_lefs) and self.get_setting("power.voltus.macro_pgv"):
             self.logger.info("Generating macro PG libraries...")
             with open(extra_lib_lefs_json, "w") as f:
-                f.write(json.dumps(extra_lib_lefs, cls=HammerJSONEncoder, indent=4))        
+                f.write(json.dumps(extra_lib_lefs, cls=HammerJSONEncoder, indent=4))
 
             macro_options = base_options.copy()
             macro_options.extend(["-stream_layer_map", self.get_gds_map_file()])
@@ -186,7 +186,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                 macro_options.extend(["stream_files", "{{ {} }}".format(" ".join(extra_lib_gds))])
 
             verbose_append("read_physical -lef {{ {} }}".format(" ".join(extra_lib_lefs)))
-            
+
             # TODO deal with no corners case (use default supply voltage + temperature)
             for corner in corners:
                 options = macro_options.copy()
@@ -229,23 +229,46 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_power_pads -net {VDD} -format defpin".format(VDD=vdd_net))
         verbose_append("set_power_pads -net {VSS} -format defpin".format(VSS=vss_net))
 
-        # TODO (daniel) deal with multiple corners
         corners = self.get_mmmc_corners()
         if corners:
+            setup_view_names = [] # type: List[str]
+            hold_view_names = [] # type: List[str]
+            extra_view_names = [] # type: List[str]
+            rc_corners = [] # type: List[str]
             for corner in corners:
+                # Setting up views for all defined corner types: setup, hold, extra
                 if corner.type is MMMCCornerType.Setup:
-                    setup_view_name = "{cname}.setup_view".format(cname=corner.name)
-                    setup_spef_name = "{cname}.setup_rc".format(cname=corner.name)
+                    corner_name = "{n}.{t}".format(n=corner.name, t="setup")
+                    setup_view_names.append("{n}_view".format(n=corner_name))
                 elif corner.type is MMMCCornerType.Hold:
-                    hold_view_name = "{cname}.hold_view".format(cname=corner.name)
-                    hold_spef_name = "{cname}.hold_rc".format(cname=corner.name)
-            verbose_append("set_analysis_view -setup {SETUP_VIEW} -hold {HOLD_VIEW}".format(SETUP_VIEW=setup_view_name, HOLD_VIEW=hold_view_name))
+                    corner_name = "{n}.{t}".format(n=corner.name, t="hold")
+                    hold_view_names.append("{n}_view".format(n=corner_name))
+                elif corner.type is MMMCCornerType.Extra:
+                    corner_name = "{n}.{t}".format(n=corner.name, t="extra")
+                    extra_view_names.append("{n}_view".format(n=corner_name))
+                else:
+                    raise ValueError("Unsupported MMMCCornerType")
+                rc_corners.append("{n}_rc".format(n=corner_name))
 
-            # TODO: fixme (this relies on par writing spefs in setup, hold order)
-            for (spef, rc_corner) in zip(self.spefs, [setup_spef_name, hold_spef_name]):
+            # Apply analysis views
+            # TODO: should not need to analyze extra views as well. Defaulting to hold for now (min. runtime impact).
+            verbose_append("set_analysis_view -setup {{ {setup_views} }} -hold {{ {hold_views} {extra_views} }}".format(
+                setup_views=" ".join(setup_view_names),
+                hold_views=" ".join(hold_view_names),
+                extra_views=" ".join(extra_view_names)
+            ))
+            # Match spefs with corners. Ordering must match (ensured here by get_mmmc_corners())!
+            for (spef, rc_corner) in zip(self.spefs, rc_corners):
                 verbose_append("read_spef {spef} -rc_corner {corner}".format(spef=os.path.join(os.getcwd(), spef), corner=rc_corner))
+
         else:
-            verbose_append("read_spef " + os.path.join(os.getcwd(), self.spefs[0]))            
+            # TODO: remove hardcoded my_view string
+            analysis_view_name = "my_view"
+            verbose_append("set_analysis_view -setup {{ {setup_view} }} -hold {{ {hold_view} }}".format(
+                setup_view=analysis_view_name,
+                hold_view=analysis_view_name
+            ))
+            verbose_append("read_spef " + os.path.join(os.getcwd(), self.spefs[0]))
 
         return True
 
@@ -258,13 +281,29 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Report based on MMMC mode
         corners = self.get_mmmc_corners()
+        extra_corners_only = self.get_setting("power.inputs.extra_corners_only")
         if not corners:
+            if extra_corners_only:
+                self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting static power for default analysis view only.")
             verbose_append("report_power -out_dir staticPowerReports")
         else:
-            setup_view_name = "{cname}.setup_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Setup, corners)).pop().name))
-            verbose_append("report_power -view {SETUP_VIEW} -out_dir staticPowerReports.{SETUP_VIEW}".format(SETUP_VIEW=setup_view_name))
-            hold_view_name = "{cname}.hold_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Hold, corners)).pop().name))
-            verbose_append("report_power -view {HOLD_VIEW} -out_dir staticPowerReports.{HOLD_VIEW}".format(HOLD_VIEW=hold_view_name))
+            if extra_corners_only:
+                extra_corners = list(filter(lambda c: c.type is MMMCCornerType.Extra, corners))
+                if len(extra_corners) == 0:
+                    self.logger.warning("power.inputs.extra_corners_only is true but no extra MMMC corners specified! Ignoring for static power.")
+                else:
+                    corners = extra_corners
+            for corner in corners:
+                # Setting up views for all defined corner types: setup, hold, extra
+                if corner.type is MMMCCornerType.Setup:
+                    view_name = "{c}.setup_view".format(c=corner.name)
+                elif corner.type is MMMCCornerType.Hold:
+                    view_name = "{c}.hold_view".format(c=corner.name)
+                elif corner.type is MMMCCornerType.Extra:
+                    view_name = "{c}.extra_view".format(c=corner.name)
+                else:
+                    raise ValueError("Unsupported MMMCCornerType")
+                verbose_append("report_power -view {VIEW} -out_dir staticPowerReports.{VIEW}".format(VIEW=view_name))
 
         return True
 
@@ -278,18 +317,29 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Check MMMC mode
         corners = self.get_mmmc_corners()
+        extra_corners_only = self.get_setting("power.inputs.extra_corners_only")
         if not corners:
+            if extra_corners_only:
+                self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting active power for default analysis view only.")
             verbose_append("report_power -out_dir activePowerReports")
         else:
-            setup_view_name = "{cname}.setup_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Setup, corners)).pop().name))
-            hold_view_name = "{cname}.hold_view".format(cname=(list(filter(lambda corner: corner.type is MMMCCornerType.Hold, corners)).pop().name))
-
-        # Report based on MMMC mode
-        if not corners:
-            verbose_append("report_power -out_dir activePowerReports")
-        else:
-            verbose_append("report_power -view {SETUP_VIEW} -out_dir activePowerReports.{SETUP_VIEW}".format(SETUP_VIEW=setup_view_name))
-            verbose_append("report_power -view {HOLD_VIEW} -out_dir activePowerReports.{HOLD_VIEW}".format(HOLD_VIEW=hold_view_name))
+            if extra_corners_only:
+                extra_corners = list(filter(lambda c: c.type is MMMCCornerType.Extra, corners))
+                if len(extra_corners) == 0:
+                    self.logger.warning("power.inputs.extra_corners_only is true but no extra MMMC corners specified! Ignoring for active power.")
+                else:
+                    corners = extra_corners
+            for corner in corners:
+                # Setting up views for all defined corner types: setup, hold, extra
+                if corner.type is MMMCCornerType.Setup:
+                    view_name = "{c}.setup_view".format(c=corner.name)
+                elif corner.type is MMMCCornerType.Hold:
+                    view_name = "{c}.hold_view".format(c=corner.name)
+                elif corner.type is MMMCCornerType.Extra:
+                    view_name = "{c}.extra_view".format(c=corner.name)
+                else:
+                    raise ValueError("Unsupported MMMCCornerType")
+                verbose_append("report_power -view {VIEW} -out_dir activePowerReports.{VIEW}".format(VIEW=view_name))
 
         # TODO (daniel) deal with different tb/dut hierarchies
         tb_name = self.get_setting("power.inputs.tb_name")
@@ -299,7 +349,6 @@ class Voltus(HammerPowerTool, CadenceTool):
         # TODO: These times should be either auto calculated/read from the inputs or moved into the same structure as a tuple
         start_times = self.get_setting("power.inputs.start_times")
         end_times = self.get_setting("power.inputs.end_times")
-
 
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
@@ -312,8 +361,18 @@ class Voltus(HammerPowerTool, CadenceTool):
             if not corners:
                 verbose_append("report_power -out_dir activePower.{VCD_FILE}".format(VCD_FILE=vcd_file))
             else:
-                verbose_append("report_power -view {SETUP_VIEW} -out_dir activePower.{VCD_FILE}.{SETUP_VIEW}".format(SETUP_VIEW=setup_view_name, VCD_FILE=vcd_file))
-                verbose_append("report_power -view {HOLD_VIEW} -out_dir activePower.{VCD_FILE}.{HOLD_VIEW}".format(HOLD_VIEW=hold_view_name, VCD_FILE=vcd_file))
+                for corner in corners:
+                    # Setting up views for all defined corner types: setup, hold, extra
+                    if corner.type is MMMCCornerType.Setup:
+                        view_name = "{c}.setup_view".format(c=corner.name)
+                    elif corner.type is MMMCCornerType.Hold:
+                        view_name = "{c}.hold_view".format(c=corner.name)
+                    elif corner.type is MMMCCornerType.Extra:
+                        view_name = "{c}.extra_view".format(c=corner.name)
+                    else:
+                        raise ValueError("Unsupported MMMCCornerType")
+                    verbose_append("report_power -view {VIEW} -out_dir activePowerReports.{VCD_FILE}.{VIEW}".format(VIEW=view_name, VCD_FILE=vcd_file))
+
             verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_file))
 
         verbose_append("set_db power_method dynamic")
@@ -325,8 +384,18 @@ class Voltus(HammerPowerTool, CadenceTool):
             if not corners:
                 verbose_append("report_power -out_dir activePower.{SAIF_FILE}".format(SAIF_FILE=saif_file))
             else:
-                verbose_append("report_power -view {SETUP_VIEW} -out_dir activePower.{SAIF_FILE}.{SETUP_VIEW}".format(SETUP_VIEW=setup_view_name, SAIF_FILE=saif_file))
-                verbose_append("report_power -view {HOLD_VIEW} -out_dir activePower.{SAIF_FILE}.{HOLD_VIEW}".format(HOLD_VIEW=hold_view_name, SAIF_FILE=saif_file))
+                for corner in corners:
+                    # Setting up views for all defined corner types: setup, hold, extra
+                    if corner.type is MMMCCornerType.Setup:
+                        view_name = "{c}.setup_view".format(c=corner.name)
+                    elif corner.type is MMMCCornerType.Hold:
+                        view_name = "{c}.hold_view".format(c=corner.name)
+                    elif corner.type is MMMCCornerType.Extra:
+                        view_name = "{c}.extra_view".format(c=corner.name)
+                    else:
+                        raise ValueError("Unsupported MMMCCornerType")
+                    verbose_append("report_power -view {VIEW} -out_dir activePowerReports.{SAIF_FILE}.{VIEW}".format(VIEW=view_name, SAIF_FILE=saif_file))
+
         return True
 
     def rail_analysis(self, method: str, power_dir: str, output_dir: Optional[str] = None) -> bool:
@@ -346,7 +415,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         accuracy = self.get_setting("power.voltus.rail_accuracy")
         if not accuracy:
             accuracy = "hd" if self.ran_stdcell_pgv else "xd" # hd still works w/o macro PG views
-            
+
         base_options = [
             "-method", method,
             "-accuracy", accuracy,
@@ -384,7 +453,7 @@ class Voltus(HammerPowerTool, CadenceTool):
             verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
             # TODO: Find highest run number, increment by 1 to enable reporting IRdrop regions
         else:
-            for corner in corners: 
+            for corner in corners:
                 options = base_options.copy()
                 if corner.type is MMMCCornerType.Setup:
                     view_name = corner.name + ".setup_view"

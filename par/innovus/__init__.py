@@ -61,35 +61,54 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                 ILMStruct(dir=self.ilm_dir_name, data_dir=ilm_data_dir, module=self.top_module,
                           lef=os.path.join(self.run_dir, "{top}ILM.lef".format(top=self.top_module)),
                           gds=self.output_gds_filename,
-                          netlist=self.output_netlist_filename)
+                          netlist=self.output_netlist_filename,
+                          sim_netlist=self.output_sim_netlist_filename)
             ]
         else:
             self.output_ilms = []
 
+        # Check that the regs paths were written properly if the write_regs step was run
+        self.output_seq_cells = self.all_cells_path
+        self.output_all_regs = self.all_regs_path
+        if self.ran_write_regs:
+            if not os.path.isfile(self.all_cells_path):
+                raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
+
+            if not os.path.isfile(self.all_regs_path):
+                raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
+
+            if not self.process_reg_paths(self.all_regs_path):
+                self.logger.error("Failed to process all register paths")
+        else:
+            self.logger.info("Did not run write_regs")
+
+        # Check that the par outputs exist if the par run was successful
         self.output_gds = self.output_gds_filename
         self.output_netlist = self.output_netlist_filename
         self.output_sim_netlist = self.output_sim_netlist_filename
         self.hcells_list = []
-
-        if not os.path.isfile(self.all_cells_path):
-            raise ValueError("Output find_regs_cells.json %s not found" % (self.all_cells_path))
-        self.output_seq_cells = self.all_cells_path
-
-        if not os.path.isfile(self.all_regs_path):
-            raise ValueError("Output find_regs_paths.json %s not found" % (self.all_regs_path))
-        self.output_all_regs = self.all_regs_path
-
-        if not self.process_reg_paths(self.all_regs_path):
-            self.logger.error("Failed to process all register paths")
-
-        if not os.path.isfile(self.output_sdf_path):
-            raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
         self.sdf_file = self.output_sdf_path
+        self.spef_files = self.output_spef_paths
 
-        for spef_path in self.output_spef_paths:
-            if not os.path.isfile(spef_path):
-                raise ValueError("Output SPEF %s not found" % (spef_path))
-            self.spef_files = self.output_spef_paths
+        if self.ran_write_design:
+            if not os.path.isfile(self.output_gds_filename):
+                raise ValueError("Output GDS %s not found" % (self.output_gds_filename))
+
+            if not os.path.isfile(self.output_netlist_filename):
+                raise ValueError("Output netlist %s not found" % (self.output_netlist_filename))
+
+            if not os.path.isfile(self.output_sim_netlist_filename):
+                raise ValueError("Output sim netlist %s not found" % (self.output_sim_netlist_filename))
+
+            if not os.path.isfile(self.output_sdf_path):
+                raise ValueError("Output SDF %s not found" % (self.output_sdf_path))
+
+            for spef_path in self.output_spef_paths:
+                if not os.path.isfile(spef_path):
+                    raise ValueError("Output SPEF %s not found" % (spef_path))
+        else:
+            self.logger.info("Did not run write_design")
+
         return True
 
     @property
@@ -118,9 +137,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     @property
     def output_spef_paths(self) -> List[str]:
-        if self.get_mmmc_corners():
-            return [os.path.join(self.run_dir, "{top}.setup.par.spef".format(top=self.top_module)),
-                os.path.join(self.run_dir, "{top}.hold.par.spef".format(top=self.top_module))]
+        corners = self.get_mmmc_corners()
+        if corners:
+            # Order matters in tool consuming spefs (ensured here by get_mmmc_corners())!
+            return list(map(lambda c: os.path.join(self.run_dir, "{top}.{corner}.par.spef".format(top=self.top_module, corner=c.name)), corners))
         else:
             return [os.path.join(self.run_dir, "{top}.par.spef".format(top=self.top_module))]
 
@@ -422,7 +442,10 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         ex=fp_llx if pin.side != "right" else fp_urx,
                         ey=fp_lly if pin.side != "top" else fp_ury
                     )
-                    pattern_arg = "-pattern fill_optimised"
+                    if len(pin.layers) > 1:
+                        pattern_arg = "-pattern fill_optimised"
+                    else:
+                        pattern_arg = "-spread_type range"
                 else:
                     assign_arg = "-assign {{ {x} {y} }}".format(x=pin.location[0], y=pin.location[1])
 
@@ -476,10 +499,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             self.verbose_append('''
             flatten_ilm
-            set_interactive_constraint_modes [all_constraint_modes]
-            source clock_constraints_fragment.sdc
-            source pin_constraints_fragment.sdc
-            ''', clean=True)
+            update_constraint_mode -name my_constraint_mode -ilm_sdc_files {sdc}
+            '''.format(sdc=self.post_synth_sdc), clean=True)
         if len(self.get_clock_ports()) > 0:
             # Ignore clock tree when there are no clocks
             self.verbose_append("create_clock_tree_spec")
@@ -517,8 +538,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def opt_design(self) -> bool:
-        """Post-route optimization and fix setup & hold time violations."""
-        self.verbose_append("opt_design -post_route -setup -hold")
+        """
+        Post-route optimization and fix setup & hold time violations.
+        -expanded_views creates timing reports for each MMMC view.
+        """
+        self.verbose_append("opt_design -post_route -setup -hold -expanded_views")
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             self.verbose_append("unflatten_ilm")
         return True
@@ -629,15 +653,21 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         corners = self.get_mmmc_corners()
         if corners:
             for corner in corners:
+                # Setting up views for all defined corner types: setup, hold, extra
                 if corner.type is MMMCCornerType.Setup:
-                    setup_corner_name = "{cname}.setup_rc".format(cname=corner.name)
+                    corner_type_name = "setup"
                 elif corner.type is MMMCCornerType.Hold:
-                    hold_corner_name = "{cname}.hold_rc".format(cname=corner.name)
-            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.setup.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=setup_corner_name))
-            self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.hold.par.spef -rc_corner {corner}".format(run_dir=self.run_dir, top=self.top_module, corner=hold_corner_name))
+                    corner_type_name = "hold"
+                elif corner.type is MMMCCornerType.Extra:
+                    corner_type_name = "extra"
+                else:
+                    raise ValueError("Unsupported MMMCCornerType")
+
+                self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.{cname}.par.spef -rc_corner {cname}.{ctype}_rc".format(run_dir=self.run_dir, top=self.top_module, cname=corner.name, ctype=corner_type_name))
+
         else:
             self.verbose_append("write_parasitics -spef_file {run_dir}/{top}.par.spef".format(run_dir=self.run_dir, top=self.top_module))
-    
+
         return True
 
 
@@ -660,7 +690,13 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def write_regs(self) -> bool:
         """write regs info to be read in for simulation register forcing"""
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.append('flatten_ilm')
+            self.append(self.child_modules_tcl())
         self.append(self.write_regs_tcl())
+        if self.hierarchical_mode.is_nonleaf_hierarchical():
+            self.append('unflatten_ilm')
+        self.ran_write_regs = True
         return True
 
     def write_design(self) -> bool:
@@ -684,7 +720,27 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Make sure that generated-scripts exists.
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
+        self.ran_write_design=True
+
         return True
+
+    @property
+    def ran_write_regs(self) -> bool:
+        """The write_regs step sets this to True if it was run."""
+        return self.attr_getter("_ran_write_regs", False)
+
+    @ran_write_regs.setter
+    def ran_write_regs(self, val: bool) -> None:
+        self.attr_setter("_ran_write_regs", val)
+
+    @property
+    def ran_write_design(self) -> bool:
+        """The write_design step sets this to True if it was run."""
+        return self.attr_getter("_ran_write_design", False)
+
+    @ran_write_design.setter
+    def ran_write_design(self, val: bool) -> None:
+        self.attr_setter("_ran_write_design", val)
 
     @property
     def ran_write_ilm(self) -> bool:
