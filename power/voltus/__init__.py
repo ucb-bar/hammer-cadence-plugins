@@ -15,7 +15,7 @@ import json
 
 from hammer_config import HammerJSONEncoder
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCornerType, TimeValue
+from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from specialcells import CellType
@@ -42,15 +42,15 @@ class Voltus(HammerPowerTool, CadenceTool):
 
     @property
     def tech_lib_dir(self) -> str:
-        return os.path.join(self.run_dir, "tech_pgv")
+        return os.path.join(self.technology.cache_dir, "tech_pgv")
 
     @property
     def stdcell_lib_dir(self) -> str:
-        return os.path.join(self.run_dir, "stdcell_pgv")
+        return os.path.join(self.technology.cache_dir, "stdcell_pgv")
 
     @property
     def macro_lib_dir(self) -> str:
-        return os.path.join(self.run_dir, "macro_pgv")
+        return os.path.join(self.technology.cache_dir, "macro_pgv")
 
     @property
     def ran_stdcell_pgv(self) -> bool:
@@ -84,6 +84,27 @@ class Voltus(HammerPowerTool, CadenceTool):
     def filter_for_extra_libs(self, lib: hammer_tech.Library) -> bool:
         return lib in list(map(lambda el: el.store_into_library(), self.technology.get_extra_libraries()))
 
+    def get_mmmc_pgv(self, corner: MMMCCorner) -> str:
+        lib_args = self.technology.read_libs([hammer_tech.filters.power_grid_library_filter],
+                                             hammer_tech.HammerTechnologyUtils.to_plain_item,
+                                             extra_pre_filters=[
+                                                 self.filter_for_mmmc(voltage=corner.voltage, temp=corner.temp)])
+        return " ".join(lib_args)
+
+    def get_mmmc_spice_models(self, corner: MMMCCorner) -> str:
+        lib_args = self.technology.read_libs([hammer_tech.filters.spice_model_file_filter],
+                                             hammer_tech.HammerTechnologyUtils.to_plain_item,
+                                             extra_pre_filters=[
+                                                 self.filter_for_mmmc(voltage=corner.voltage, temp=corner.temp)])
+        return " ".join(lib_args)
+
+    def get_mmmc_spice_corners(self, corner: MMMCCorner) -> str:
+        return self.technology.read_libs([hammer_tech.filters.spice_model_lib_corner_filter],
+                                             hammer_tech.HammerTechnologyUtils.to_plain_item,
+                                             extra_pre_filters=[
+                                                 self.filter_for_mmmc(voltage=corner.voltage, temp=corner.temp)],
+                                             must_exist=False)
+
     @property
     def steps(self) -> List[HammerToolStep]:
         return self.make_steps_from_methods([
@@ -101,16 +122,20 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         corners = self.get_mmmc_corners()
 
-	# Options for set_pg_library_mode
+	    # Options for set_pg_library_mode
         base_options = [] # type: List(str)
         if self.get_setting("power.voltus.lef_layer_map"):
             base_options.extend(["-lef_layer_map", self.get_setting("power.voltus.lef_layer_map")])
 
-	# Characterize tech & stdcell libraries only once
-        if not os.path.isdir(self.tech_lib_dir) and not os.path.isdir(self.stdcell_lib_dir):
+        # First, check if tech plugin supplies power grid libraries
+        pgv_libs = self.technology.read_libs([hammer_tech.filters.power_grid_library_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
+        tech_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
+        if len(pgv_libs) > 0:
+            self.ran_stdcell_pgv = True
+	    # Else, characterize tech & stdcell libraries only once
+        elif not os.path.isdir(self.tech_lib_dir) or not os.path.isdir(self.stdcell_lib_dir):
             self.logger.info("Generating techonly and stdcell PG libraries for the first time...")
             # Get only the tech-defined libraries
-            tech_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
             verbose_append("read_physical -lef {{ {} }}".format(" ".join(tech_lib_lefs)))
 
             tech_options = base_options.copy()
@@ -119,11 +144,10 @@ class Voltus(HammerPowerTool, CadenceTool):
             if len(stdfillers) > 0:
                 stdfillers = list(map(lambda f: str(f), stdfillers[0].name))
                 tech_options.extend(["-filler_cells", "{{ {} }} ".format(" ".join(stdfillers))])
-            # TODO need separate decap special cells
-            #decaps = self.technology.get_special_cell_by_type(CellType.Decap)
-            #if len(decaps) > 0:
-                #decaps = list(map(lambda d: str(d), decaps[0].name))
-                #tech_options.extend(["-decap_cells", "{{ {} }}".format(" ".join(decaps))])
+            decaps = self.technology.get_special_cell_by_type(CellType.Decap)
+            if len(decaps) > 0:
+                decaps = list(map(lambda d: str(d), decaps[0].name))
+                tech_options.extend(["-decap_cells", "{{ {} }}".format(" ".join(decaps))])
 
             # TODO deal with no corners case (use default supply voltage + temperature)
             for corner in corners:
@@ -140,24 +164,39 @@ class Voltus(HammerPowerTool, CadenceTool):
                 verbose_append("write_pg_library -out_dir {}".format(os.path.join(self.tech_lib_dir, corner.name)))
 
                 # Next do stdcell library
-                # TODO: exit if spice model + corners not in tech JSON
                 options[options.index("techonly")] = "stdcells"
-                # TODO: add spice model + corners properly
-                if corner.name == "PVT_0P63V_100C":
-                    options.extend(["-spice_models", "/home/ff/ee241/spring21-labs/asap7PDK_r1p5/models/hspice/7nm_SS.pm"])
+                spice_models = self.get_mmmc_spice_models(corner)
+                spice_corners = self.get_mmmc_spice_corners(corner)
+                if len(spice_models) == 0:
+                    self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
                 else:
-                    options.extend(["-spice_models", "/home/ff/ee241/spring21-labs/asap7PDK_r1p5/models/hspice/7nm_FF.pm"])
+                    options.extend(["-spice_models", spice_models])
+                    if len(spice_corners) > 0:
+                        options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
 
                 verbose_append("set_pg_library_mode {}".format(" ".join(options)))
                 verbose_append("write_pg_library -out_dir {}".format(os.path.join(self.stdcell_lib_dir, corner.name)))
-                self.ran_stdcell_pgv = True
+            self.ran_stdcell_pgv = True
         else:
             self.logger.info("techonly and stdcell PG libraries already generated, skipping...")
             self.ran_stdcell_pgv = True
 
-	# Characterize macro libraries once, unless list of extra libraries has changed
+    	# Characterize macro libraries once, unless list of extra libraries has changed
+        tech_lef = [tech_lib_lefs[0]]
         extra_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
         extra_lib_lefs_json = os.path.join(self.run_dir, "extra_lib_lefs.json")
+
+        # FIXME: reading additional LEFs fails, can't init/reset design either!
+        #if not os.path.isdir(self.tech_lib_dir) or not os.path.isdir(self.stdcell_lib_dir):
+        #    # Ran tech/stdcell in this session, just add LEFs
+        #    lef_str = "-add_lefs {{ {EXTRA_LEFS} }}".format(EXTRA_LEFS=" ".join(extra_lib_lefs))
+        #else:
+        ## Tech LEF must be first
+        #    lef_str = "-lef {{ {TECH_LEF} {EXTRA_LEFS} }}".format(TECH_LEF=tech_lef, EXTRA_LEFS=" ".join(extra_lib_lefs))
+        #verbose_append("init_design")
+        #verbose_append("reset_design")
+
+        lef_str = "-lef {{ {TECH_LEF} {EXTRA_LEFS} }}".format(TECH_LEF=tech_lef, EXTRA_LEFS=" ".join(extra_lib_lefs))
         prior_extra_lib_lefs = [] # type: List[str]
         if os.path.exists(extra_lib_lefs_json):
             with open(extra_lib_lefs_json, "r") as f:
@@ -176,7 +215,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                 self.logger.error("Must have Spice netlists for macro PG library generation! Skipping.")
                 return True
             else:
-                macro_options.extend(["spice_subckts", "{{ {} }}".format(" ".join(extra_lib_sp))])
+                macro_options.extend(["-spice_subckts", "{{ {} }}".format(" ".join(extra_lib_sp))])
 
             extra_lib_gds = self.technology.read_libs([hammer_tech.filters.gds_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
             if len(extra_lib_gds) == 0:
@@ -185,7 +224,7 @@ class Voltus(HammerPowerTool, CadenceTool):
             else:
                 macro_options.extend(["stream_files", "{{ {} }}".format(" ".join(extra_lib_gds))])
 
-            verbose_append("read_physical -lef {{ {} }}".format(" ".join(extra_lib_lefs)))
+            verbose_append("read_physical {}".format(lef_str))
 
             # TODO deal with no corners case (use default supply voltage + temperature)
             for corner in corners:
@@ -196,11 +235,14 @@ class Voltus(HammerPowerTool, CadenceTool):
                     "-default_power_voltage", str(corner.voltage.value),
                     "-temperature", str(corner.temp.value),
                 ])
-                # TODO: add spice model + corners properly
-                if corner.name == "PVT_0P63V_100C":
-                    options.extend(["-spice_models", "/home/ff/ee241/spring21-labs/asap7PDK_r1p5/models/hspice/7nm_SS.pm"])
+                spice_models = self.get_mmmc_spice_models(corner)
+                spice_corners = self.get_mmmc_spice_corners(corner)
+                if len(spice_models) == 0:
+                    self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
                 else:
-                    options.extend(["-spice_models", "/home/ff/ee241/spring21-labs/asap7PDK_r1p5/models/hspice/7nm_FF.pm"])
+                    options.extend(["-spice_models", spice_models])
+                    if len(spice_corners) > 0:
+                        options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
                 verbose_append("set_pg_library_mode {}".format(" ".join(options)))
                 verbose_append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
             self.ran_macro_pgv = True
@@ -432,6 +474,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         pg_nets = self.get_all_power_nets() + self.get_all_ground_nets()
         # Report based on MMMC corners
         corners = self.get_mmmc_corners()
+        # TODO: These libraries need to be generated
         if not corners:
             options = base_options.copy()
             pg_libs = [os.path.join(self.tech_lib_dir, "techonly.cl")]
@@ -439,7 +482,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                 pg_libs.append(os.path.join(self.stdcell_lib_dir, "stdcells.cl"))
             if self.ran_macro_pgv:
                 # Assume library name matches cell name
-                # TODO: Use some filters w/ LEFUtils to extract cells from LEFs
+                # TODO: Use some filters w/ LEFUtils to extract cells from LEFs, e.g. MacroSize?
                 macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
                 pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, "macros_{}.cl".format(l)), macros)))
             options.extend(["-power_grid_libraries", "{{ {} }}".format(" ".join(pg_libs))])
@@ -463,12 +506,14 @@ class Voltus(HammerPowerTool, CadenceTool):
                     view_name = corner.name + ".extra_view"
                 else:
                     raise ValueError("Unsupported MMMCCornerType")
-                pg_libs = [os.path.join(self.tech_lib_dir, corner.name, "techonly.cl")]
-                if self.ran_stdcell_pgv:
-                    pg_libs.append(os.path.join(self.stdcell_lib_dir, corner.name, "stdcells.cl"))
+                pg_libs = self.get_mmmc_pgv(corner)
+                if len(pg_libs) == 0:
+                    pg_libs = [os.path.join(self.tech_lib_dir, corner.name, "techonly.cl")]
+                    if self.ran_stdcell_pgv:
+                        pg_libs.append(os.path.join(self.stdcell_lib_dir, corner.name, "stdcells.cl"))
                 if self.ran_macro_pgv:
                     # Assume library name matches cell name
-                    # TODO: Use some filters w/ LEFUtils to extract cells from LEFs
+                    # TODO: Use some filters w/ LEFUtils to extract cells from LEFs, e.g. MacroSize?
                     macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
                     pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, corner.name, "macros_{}.cl".format(l)), macros)))
 
