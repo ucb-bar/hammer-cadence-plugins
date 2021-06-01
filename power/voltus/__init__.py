@@ -14,7 +14,7 @@ import errno
 import json
 
 from hammer_config import HammerJSONEncoder
-from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
+from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid, in_place_unique
 from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
@@ -39,6 +39,10 @@ class Voltus(HammerPowerTool, CadenceTool):
         new_dict = dict(super().env_vars)
         new_dict["VOLTUS_BIN"] = self.get_setting("power.voltus.voltus_bin")
         return new_dict
+
+    @property
+    def extra_corners_only(self) -> bool:
+        return self.get_setting("power.inputs.extra_corners_only")
 
     @property
     def tech_stdcell_pgv_tcl(self) -> str:
@@ -96,6 +100,15 @@ class Voltus(HammerPowerTool, CadenceTool):
     def gen_macro_pgv(self, val: bool) -> None:
         self.attr_setter("_gen_macro_pgv", val)
 
+    @property
+    def macro_pgv_cells(self) -> List[str]:
+        """ init_technology populates the list of macros to generate PG views for """
+        return self.attr_getter("_macro_pgv_cells", [])
+
+    @macro_pgv_cells.setter
+    def macro_pgv_cells(self, val: List[str]) -> None:
+        self.attr_setter("_macro_pgv_cells", val)
+
     def tech_lib_filter(self) -> List[Callable[[hammer_tech.Library], bool]]:
         """ Filter only libraries from tech plugin """
         return [self.filter_for_tech_libs]
@@ -149,18 +162,22 @@ class Voltus(HammerPowerTool, CadenceTool):
         if self.get_setting("power.voltus.lef_layer_map"):
             base_options.extend(["-lef_layer_map", self.get_setting("power.voltus.lef_layer_map")])
 
+        # Setup commands for each PG library run
+        base_cmds = ["set_db design_process_node {}".format(self.get_setting("vlsi.core.node"))]
+        base_cmds.append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
+
         # First, check if tech plugin supplies power grid libraries
-        pgv_libs = self.technology.read_libs([hammer_tech.filters.power_grid_library_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
+        tech_pg_libs = self.technology.read_libs([hammer_tech.filters.power_grid_library_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
         tech_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
-        if len(pgv_libs) > 0:
+        if len(tech_pg_libs) > 0:
             self.logger.info("Technology already provides PG libraries. Moving onto macro PG libraries.")
             self.ran_tech_stdcell_pgv = True
 	    # Else, characterize tech & stdcell libraries only once
         elif not os.path.isdir(self.tech_lib_dir) or not os.path.isdir(self.stdcell_lib_dir):
             self.logger.info("Generating techonly and stdcell PG libraries for the first time...")
-            ts_output = []  # type: List[str]
+            ts_output = base_cmds.copy()
             # Get only the tech-defined libraries
-            output.append("read_physical -lef {{ {} }}".format(" ".join(tech_lib_lefs)))
+            ts_output.append("read_physical -lef {{ {} }}".format(" ".join(tech_lib_lefs)))
 
             tech_options = base_options.copy()
             # Append list of fillers
@@ -193,6 +210,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                 spice_corners = self.get_mmmc_spice_corners(corner)
                 if len(spice_models) == 0:
                     self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
+                    return True
                 else:
                     options.extend(["-spice_models", " ".join(spice_models)])
                     if len(spice_corners) > 0:
@@ -210,73 +228,108 @@ class Voltus(HammerPowerTool, CadenceTool):
             self.logger.info("techonly and stdcell PG libraries already generated, skipping...")
             self.ran_tech_stdcell_pgv = True
 
-    	# Characterize macro libraries once, unless list of extra libraries has changed
-        tech_lef = tech_lib_lefs[0]
-        extra_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
-        extra_lib_lefs_json = os.path.join(self.run_dir, "extra_lib_lefs.json")
-        prior_extra_lib_lefs = []  # type: List[str]
-        if os.path.exists(extra_lib_lefs_json):
-            with open(extra_lib_lefs_json, "r") as f:
-                prior_extra_lib_lefs = json.loads(f.read())
+        if self.get_setting("power.voltus.macro_pgv"):
+            m_output = base_cmds.copy()
+    	    # Characterize macro libraries once, unless list of extra libraries has been modified/changed
+            tech_lef = tech_lib_lefs[0]
+            extra_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
+            extra_lib_mtimes = list(map(lambda l: os.path.getmtime(l), extra_lib_lefs))
+            extra_lib_lefs_mtimes = dict(zip(extra_lib_lefs, extra_lib_mtimes))
+            extra_lib_lefs_json = os.path.join(self.run_dir, "extra_lib_lefs.json")
+            extra_pg_libs = self.technology.read_libs([hammer_tech.filters.power_grid_library_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
+            # TODO: Use some filters w/ LEFUtils to extract cells from LEFs, e.g. MacroSize instead of using name field
+            named_extra_libs = list(filter(lambda l: l.library.name is not None and l.library.power_grid_library not in extra_pg_libs, self.technology.get_extra_libraries()))  # type: List[hammer_tech.ExtraLibrary]
 
-        if (not os.path.isdir(self.macro_lib_dir) or extra_lib_lefs != prior_extra_lib_lefs) and self.get_setting("power.voltus.macro_pgv"):
-            self.logger.info("Generating macro PG libraries...")
-            m_output = []  # type: List[str]
-            with open(extra_lib_lefs_json, "w") as f:
-                f.write(json.dumps(extra_lib_lefs, cls=HammerJSONEncoder, indent=4))
+            if not os.path.isdir(self.macro_lib_dir):
+                self.logger.info("Characterizing macros for the first time...")
+                # First time: characterize all cells
+                macros = list(map(lambda l: l.library.name, named_extra_libs))
+                in_place_unique(macros)
+                self.macro_pgv_cells = macros
 
-            macro_options = base_options.copy()
-            gds_map_file = self.get_gds_map_file()
-            if gds_map_file is None:
-                self.logger.error("Must have GDS layer map for macro PG library generation! Skipping.")
+                # Write dict of extra library LEFs
+                with open(extra_lib_lefs_json, "w") as f:
+                    f.write(json.dumps(extra_lib_lefs_mtimes, cls=HammerJSONEncoder, indent=4))
             else:
-                assert isinstance(gds_map_file, str)
-                macro_options.extend(["-stream_layer_map", gds_map_file])
+                # Figure out which cells to re-characterize
+                prior_extra_lib_lefs = {}  # type: Dict[str, str]
+                if os.path.exists(extra_lib_lefs_json):
+                    with open(extra_lib_lefs_json, "r") as f:
+                        prior_extra_lib_lefs = json.loads(f.read())
+                # Write updated dict of extra library LEFs
+                with open(extra_lib_lefs_json, "w") as f:
+                    f.write(json.dumps(extra_lib_lefs_mtimes, cls=HammerJSONEncoder, indent=4))
+                # Get LEFs which have been created/modified, match cell names if provided
+                mod_lefs = dict(set(extra_lib_lefs_mtimes.items()) - set(prior_extra_lib_lefs.items())).keys()
+                rechar_libs = list(filter(lambda l: l.library.lef_file in mod_lefs, named_extra_libs))
+                macros = list(map(lambda l: l.library.name, rechar_libs))
+                in_place_unique(macros)
+                self.macro_pgv_cells = macros
 
-            extra_lib_sp = self.technology.read_libs([hammer_tech.filters.spice_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
-            if len(extra_lib_sp) == 0:
-                self.logger.error("Must have Spice netlists for macro PG library generation! Skipping.")
-                return True
-            else:
-                macro_options.extend(["-spice_subckts", "{{ {} }}".format(" ".join(extra_lib_sp))])
+            if len(self.macro_pgv_cells) > 0:
+                self.logger.info("Characterizing the following macros: {}".format(" ".join(self.macro_pgv_cells)))
+                # Write list of cells to characterize
+                cells_list = os.path.join(self.run_dir, "macro_cells.txt")
+                with open(cells_list, "w") as f:
+                    f.write("\n".join(self.macro_pgv_cells))
 
-            extra_lib_gds = self.technology.read_libs([hammer_tech.filters.gds_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
-            if len(extra_lib_gds) == 0:
-                self.logger.error("Must have GDS data for macro PG library generation! Skipping.")
-                return True
-            else:
-                macro_options.extend(["-stream_files", "{{ {} }}".format(" ".join(extra_lib_gds))])
+                macro_options = base_options.copy()
 
-            m_output.append("read_physical -lef {{ {TECH_LEF} {EXTRA_LEFS} }}".format(TECH_LEF=tech_lef, EXTRA_LEFS=" ".join(extra_lib_lefs)))
-
-            # TODO deal with no corners case (use default supply voltage + temperature)
-            for corner in corners:
-                options = macro_options.copy()
-                options.extend([
-                    "-extraction_tech_file", self.get_mmmc_qrc(corner), #TODO: QRC should be tied to stackup
-                    "-cell_type", "macros",
-                    "-default_power_voltage", str(corner.voltage.value),
-                    "-temperature", str(corner.temp.value),
-                ])
-                spice_models = self.get_mmmc_spice_models(corner)
-                spice_corners = self.get_mmmc_spice_corners(corner)
-                if len(spice_models) == 0:
-                    self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
+                # File checks
+                gds_map_file = self.get_gds_map_file()
+                if gds_map_file is None:
+                    self.logger.error("Must have GDS layer map for macro PG library generation! Skipping.")
+                    return True
                 else:
-                    options.extend(["-spice_models", " ".join(spice_models)])
-                    if len(spice_corners) > 0:
-                        options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
-                m_output.append("set_pg_library_mode {}".format(" ".join(options)))
-                m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
+                    assert isinstance(gds_map_file, str)
+                    macro_options.extend(["-stream_layer_map", gds_map_file])
 
-            m_output.append("exit")
-            with open(self.macro_pgv_tcl, "w") as f:
-                f.write("\n".join(m_output))
-            self.gen_macro_pgv = True
-            self.ran_macro_pgv = True
-        elif (os.path.isdir(self.macro_lib_dir) and extra_lib_lefs == prior_extra_lib_lefs):
-            self.logger.info("macro PG libraries already generated and macros have not changed, skipping...")
-            self.ran_macro_pgv = True
+                extra_lib_sp = self.technology.read_libs([hammer_tech.filters.spice_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
+                if len(extra_lib_sp) == 0:
+                    self.logger.error("Must have Spice netlists for macro PG library generation! Skipping.")
+                    return True
+                else:
+                    macro_options.extend(["-spice_subckts", "{{ {} }}".format(" ".join(extra_lib_sp))])
+
+                extra_lib_gds = self.technology.read_libs([hammer_tech.filters.gds_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
+                if len(extra_lib_gds) == 0:
+                    self.logger.error("Must have GDS data for macro PG library generation! Skipping.")
+                    return True
+                else:
+                    macro_options.extend(["-stream_files", "{{ {} }}".format(" ".join(extra_lib_gds))])
+
+                m_output.append("read_physical -lef {{ {TECH_LEF} {EXTRA_LEFS} }}".format(TECH_LEF=tech_lef, EXTRA_LEFS=" ".join(extra_lib_lefs)))
+
+                # TODO deal with no corners case (use default supply voltage + temperature)
+                for corner in corners:
+                    options = macro_options.copy()
+                    options.extend([
+                        "-extraction_tech_file", self.get_mmmc_qrc(corner), #TODO: QRC should be tied to stackup
+                        "-cell_type", "macros",
+                        "-cells_file", cells_list,
+                        "-default_power_voltage", str(corner.voltage.value),
+                        "-temperature", str(corner.temp.value),
+                    ])
+                    spice_models = self.get_mmmc_spice_models(corner)
+                    spice_corners = self.get_mmmc_spice_corners(corner)
+                    if len(spice_models) == 0:
+                        self.logger.error("Must specify Spice model files in tech plugin to generate macro PG libraries")
+                        return True
+                    else:
+                        options.extend(["-spice_models", " ".join(spice_models)])
+                        if len(spice_corners) > 0:
+                            options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                    m_output.append("set_pg_library_mode {}".format(" ".join(options)))
+                    m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
+
+                m_output.append("exit")
+                with open(self.macro_pgv_tcl, "w") as f:
+                    f.write("\n".join(m_output))
+                self.gen_macro_pgv = True
+                self.ran_macro_pgv = True
+            else:
+                self.logger.info("macro PG libraries already generated and macros have not changed, skipping...")
+                self.ran_macro_pgv = True
         else:
             self.logger.info("power.voltus.macro_pgv is False. Rail analysis will be incomplete over macro blocks.")
 
@@ -353,13 +406,12 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Report based on MMMC mode
         corners = self.get_mmmc_corners()
-        extra_corners_only = self.get_setting("power.inputs.extra_corners_only")
         if not corners:
-            if extra_corners_only:
+            if self.extra_corners_only:
                 self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting static power for default analysis view only.")
             verbose_append("report_power -out_dir staticPowerReports")
         else:
-            if extra_corners_only:
+            if self.extra_corners_only:
                 extra_corners = list(filter(lambda c: c.type is MMMCCornerType.Extra, corners))
                 if len(extra_corners) == 0:
                     self.logger.warning("power.inputs.extra_corners_only is true but no extra MMMC corners specified! Ignoring for static power.")
@@ -389,13 +441,12 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Check MMMC mode
         corners = self.get_mmmc_corners()
-        extra_corners_only = self.get_setting("power.inputs.extra_corners_only")
         if not corners:
-            if extra_corners_only:
+            if self.extra_corners_only:
                 self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting active power for default analysis view only.")
             verbose_append("report_power -out_dir activePowerReports")
         else:
-            if extra_corners_only:
+            if self.extra_corners_only:
                 extra_corners = list(filter(lambda c: c.type is MMMCCornerType.Extra, corners))
                 if len(extra_corners) == 0:
                     self.logger.warning("power.inputs.extra_corners_only is true but no extra MMMC corners specified! Ignoring for active power.")
@@ -506,16 +557,15 @@ class Voltus(HammerPowerTool, CadenceTool):
         corners = self.get_mmmc_corners()
         # TODO: These libraries need to be generated
         if not corners:
+            if self.extra_corners_only:
+                self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting rail analysis for default analysis view only.")
             options = base_options.copy()
-            pg_libs = []  # type: List[str]
+            pg_libs = self.technology.read_libs([hammer_tech.filters.power_grid_library_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
             if self.ran_tech_stdcell_pgv:
                 pg_libs.append(os.path.join(self.tech_lib_dir, "techonly.cl"))
                 pg_libs.append(os.path.join(self.stdcell_lib_dir, "stdcells.cl"))
             if self.ran_macro_pgv:
-                # Assume library name matches cell name
-                # TODO: Use some filters w/ LEFUtils to extract cells from LEFs, e.g. MacroSize?
-                macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
-                pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, "macros_{}.cl".format(l)), macros)))
+                pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, "macros_{}.cl".format(l)), self.macro_pgv_cells)))
             if len(pg_libs) == 0:
                 self.logger.warning("No PG libraries are available! Rail analysis is skipped.")
                 return True
@@ -530,6 +580,12 @@ class Voltus(HammerPowerTool, CadenceTool):
             verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
             # TODO: Find highest run number, increment by 1 to enable reporting IRdrop regions
         else:
+            if self.extra_corners_only:
+                extra_corners = list(filter(lambda c: c.type is MMMCCornerType.Extra, corners))
+                if len(extra_corners) == 0:
+                    self.logger.warning("power.inputs.extra_corners_only is true but no extra MMMC corners specified! Ignoring for rail analysis.")
+                else:
+                    corners = extra_corners
             for corner in corners:
                 options = base_options.copy()
                 if corner.type is MMMCCornerType.Setup:
@@ -541,13 +597,11 @@ class Voltus(HammerPowerTool, CadenceTool):
                 else:
                     raise ValueError("Unsupported MMMCCornerType")
                 pg_libs = self.get_mmmc_pgv(corner)
-                if len(pg_libs) == 0 and self.ran_tech_stdcell_pgv:
-                    pg_libs = [os.path.join(self.tech_lib_dir, "techonly.cl"), os.path.join(self.stdcell_lib_dir, "stdcells.cl")]
+                if self.ran_tech_stdcell_pgv:
+                    pg_libs.append(os.path.join(self.tech_lib_dir, "techonly.cl"))
+                    pg_libs.append(os.path.join(self.stdcell_lib_dir, "stdcells.cl"))
                 if self.ran_macro_pgv:
-                    # Assume library name matches cell name
-                    # TODO: Use some filters w/ LEFUtils to extract cells from LEFs, e.g. MacroSize?
-                    macros = list(map(lambda l: l.library.name, self.technology.get_extra_libraries()))
-                    pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, corner.name, "macros_{}.cl".format(l)), macros)))
+                    pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, corner.name, "macros_{}.cl".format(l)), self.macro_pgv_cells)))
                 if len(pg_libs) == 0:
                     self.logger.warning("No PG libraries are available! Rail analysis is skipped.")
                     return True

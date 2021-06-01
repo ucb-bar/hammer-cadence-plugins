@@ -19,6 +19,7 @@ power.voltus:
   lef_layer_map: null
 
   # If true, generate power grid views of the macros contained in vlsi.inputs.extra_libraries
+  # Each library is required to have a name. If the library has a power grid view provided, they are skipped.
   macro_pgv: true
 
   # Accuracy for rail analysis (choices are "xd" and "hd")
