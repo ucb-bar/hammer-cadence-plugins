@@ -15,7 +15,7 @@ import json
 
 from hammer_config import HammerJSONEncoder
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid, in_place_unique
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue
+from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue, VoltageValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from specialcells import CellType
@@ -180,6 +180,7 @@ class Voltus(HammerPowerTool, CadenceTool):
             ts_output.append("read_physical -lef {{ {} }}".format(" ".join(tech_lib_lefs)))
 
             tech_options = base_options.copy()
+            tech_options.extend(["-cell_type", "techonly"])
             # Append list of fillers
             stdfillers = self.technology.get_special_cell_by_type(CellType.StdFiller)
             if len(stdfillers) > 0:
@@ -190,24 +191,20 @@ class Voltus(HammerPowerTool, CadenceTool):
                 decaps_names = list(map(lambda d: str(d), decaps[0].name))
                 tech_options.extend(["-decap_cells", "{{ {} }}".format(" ".join(decaps_names))])
 
-            # TODO deal with no corners case (use default supply voltage + temperature)
-            for corner in corners:
+            if not corners:
                 # Start with tech-only library
                 options = tech_options.copy()
                 options.extend([
-                    "-extraction_tech_file", self.get_mmmc_qrc(corner), #TODO: QRC should be tied to stackup
-                    "-cell_type", "techonly",
-                    "-default_power_voltage", str(corner.voltage.value),
-                    "-temperature", str(corner.temp.value)
+                    "-extraction_tech_file", self.get_qrc_tech(), # TODO: this assumes only 1 exists in no corners case
+                    "-default_power_voltage", str(VoltageValue(self.get_setting("vlsi.inputs.supplies.VDD")).value_in_units("V"))
                 ])
-
                 ts_output.append("set_pg_library_mode {}".format(" ".join(options)))
-                ts_output.append("write_pg_library -out_dir {}".format(os.path.join(self.tech_lib_dir, corner.name)))
+                ts_output.append("write_pg_library -out_dir {}".format(self.tech_lib_dir))
 
                 # Next do stdcell library
                 options[options.index("techonly")] = "stdcells"
-                spice_models = self.get_mmmc_spice_models(corner)
-                spice_corners = self.get_mmmc_spice_corners(corner)
+                spice_models = self.technology.read_libs([hammer_tech.filters.spice_model_file_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
+                spice_corners = self.technology.read_libs([hammer_tech.filters.spice_model_lib_corner_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
                 if len(spice_models) == 0:
                     self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
                     return True
@@ -215,9 +212,34 @@ class Voltus(HammerPowerTool, CadenceTool):
                     options.extend(["-spice_models", " ".join(spice_models)])
                     if len(spice_corners) > 0:
                         options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
-
                 ts_output.append("set_pg_library_mode {}".format(" ".join(options)))
-                ts_output.append("write_pg_library -out_dir {}".format(os.path.join(self.stdcell_lib_dir, corner.name)))
+                ts_output.append("write_pg_library -out_dir {}".format(self.stdcell_lib_dir))
+
+            else:
+                for corner in corners:
+                    # Start with tech-only library
+                    options = tech_options.copy()
+                    options.extend([
+                        "-extraction_tech_file", self.get_mmmc_qrc(corner), #TODO: QRC should be tied to stackup
+                        "-default_power_voltage", str(corner.voltage.value),
+                        "-temperature", str(corner.temp.value)
+                    ])
+                    ts_output.append("set_pg_library_mode {}".format(" ".join(options)))
+                    ts_output.append("write_pg_library -out_dir {}".format(os.path.join(self.tech_lib_dir, corner.name)))
+
+                    # Next do stdcell library
+                    options[options.index("techonly")] = "stdcells"
+                    spice_models = self.get_mmmc_spice_models(corner)
+                    spice_corners = self.get_mmmc_spice_corners(corner)
+                    if len(spice_models) == 0:
+                        self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
+                        return True
+                    else:
+                        options.extend(["-spice_models", " ".join(spice_models)])
+                        if len(spice_corners) > 0:
+                            options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                    ts_output.append("set_pg_library_mode {}".format(" ".join(options)))
+                    ts_output.append("write_pg_library -out_dir {}".format(os.path.join(self.stdcell_lib_dir, corner.name)))
 
             ts_output.append("exit")
             with open(self.tech_stdcell_pgv_tcl, "w") as f:
@@ -274,6 +296,10 @@ class Voltus(HammerPowerTool, CadenceTool):
                     f.write("\n".join(self.macro_pgv_cells))
 
                 macro_options = base_options.copy()
+                macro_options.extend([
+                        "-cell_type", "macros",
+                        "-cells_file", cells_list
+                ])
 
                 # File checks
                 gds_map_file = self.get_gds_map_file()
@@ -300,18 +326,14 @@ class Voltus(HammerPowerTool, CadenceTool):
 
                 m_output.append("read_physical -lef {{ {TECH_LEF} {EXTRA_LEFS} }}".format(TECH_LEF=tech_lef, EXTRA_LEFS=" ".join(extra_lib_lefs)))
 
-                # TODO deal with no corners case (use default supply voltage + temperature)
-                for corner in corners:
+                if not corners:
                     options = macro_options.copy()
                     options.extend([
-                        "-extraction_tech_file", self.get_mmmc_qrc(corner), #TODO: QRC should be tied to stackup
-                        "-cell_type", "macros",
-                        "-cells_file", cells_list,
-                        "-default_power_voltage", str(corner.voltage.value),
-                        "-temperature", str(corner.temp.value),
+                        "-extraction_tech_file", self.get_qrc_tech(), # TODO: this assumes only 1 exists in no corners case
+                        "-default_power_voltage", str(VoltageValue(self.get_setting("vlsi.inputs.supplies.VDD")).value_in_units("V"))
                     ])
-                    spice_models = self.get_mmmc_spice_models(corner)
-                    spice_corners = self.get_mmmc_spice_corners(corner)
+                    spice_models = self.technology.read_libs([hammer_tech.filters.spice_model_file_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
+                    spice_corners = self.technology.read_libs([hammer_tech.filters.spice_model_lib_corner_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
                     if len(spice_models) == 0:
                         self.logger.error("Must specify Spice model files in tech plugin to generate macro PG libraries")
                         return True
@@ -321,6 +343,26 @@ class Voltus(HammerPowerTool, CadenceTool):
                             options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
                     m_output.append("set_pg_library_mode {}".format(" ".join(options)))
                     m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
+
+                else:
+                    for corner in corners:
+                        options = macro_options.copy()
+                        options.extend([
+                            "-extraction_tech_file", self.get_mmmc_qrc(corner), #TODO: QRC should be tied to stackup
+                            "-default_power_voltage", str(corner.voltage.value),
+                            "-temperature", str(corner.temp.value),
+                        ])
+                        spice_models = self.get_mmmc_spice_models(corner)
+                        spice_corners = self.get_mmmc_spice_corners(corner)
+                        if len(spice_models) == 0:
+                            self.logger.error("Must specify Spice model files in tech plugin to generate macro PG libraries")
+                            return True
+                        else:
+                            options.extend(["-spice_models", " ".join(spice_models)])
+                            if len(spice_corners) > 0:
+                                options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                        m_output.append("set_pg_library_mode {}".format(" ".join(options)))
+                        m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
 
                 m_output.append("exit")
                 with open(self.macro_pgv_tcl, "w") as f:
@@ -555,7 +597,6 @@ class Voltus(HammerPowerTool, CadenceTool):
         pg_nets = self.get_all_power_nets() + self.get_all_ground_nets()
         # Report based on MMMC corners
         corners = self.get_mmmc_corners()
-        # TODO: These libraries need to be generated
         if not corners:
             if self.extra_corners_only:
                 self.logger.warning("power.inputs.extra_corners_only not valid in non-MMMC mode! Reporting rail analysis for default analysis view only.")
@@ -598,8 +639,8 @@ class Voltus(HammerPowerTool, CadenceTool):
                     raise ValueError("Unsupported MMMCCornerType")
                 pg_libs = self.get_mmmc_pgv(corner)
                 if self.ran_tech_stdcell_pgv:
-                    pg_libs.append(os.path.join(self.tech_lib_dir, "techonly.cl"))
-                    pg_libs.append(os.path.join(self.stdcell_lib_dir, "stdcells.cl"))
+                    pg_libs.append(os.path.join(self.tech_lib_dir, corner.name, "techonly.cl"))
+                    pg_libs.append(os.path.join(self.stdcell_lib_dir, corner.name, "stdcells.cl"))
                 if self.ran_macro_pgv:
                     pg_libs.extend(list(map(lambda l: os.path.join(self.macro_lib_dir, corner.name, "macros_{}.cl".format(l)), self.macro_pgv_cells)))
                 if len(pg_libs) == 0:
