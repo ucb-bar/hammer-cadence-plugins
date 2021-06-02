@@ -380,6 +380,7 @@ class Voltus(HammerPowerTool, CadenceTool):
     def init_design(self) -> bool:
         verbose_append = self.verbose_append
 
+        verbose_append("set_db design_process_node {}".format(self.get_setting("vlsi.core.node")))
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
         innovus_db = os.path.join(os.getcwd(), self.par_database)
@@ -387,6 +388,8 @@ class Voltus(HammerPowerTool, CadenceTool):
             raise ValueError("Innovus database %s not found" % (innovus_db))
 
         verbose_append("read_db {}".format(innovus_db))
+
+        verbose_append("check_pg_shorts -out_file shorts.rpt")
 
         # TODO (daniel) deal with multiple power domains
         for power_net in self.get_all_power_nets():
