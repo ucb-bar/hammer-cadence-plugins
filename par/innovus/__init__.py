@@ -15,6 +15,7 @@ import errno
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
 from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType
+from hammer_vlsi.units import CapacitanceValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from hammer_tech import RoutingDirection, Metal
@@ -514,19 +515,66 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         return True
 
     def add_fillers(self) -> bool:
-        """add filler cells"""
+        """add decap and filler cells"""
+        decaps = self.technology.get_special_cell_by_type(CellType.Decap)
         stdfillers = self.technology.get_special_cell_by_type(CellType.StdFiller)
+
+        if len(decaps) == 0:
+            self.logger.info("The technology plugin 'special cells: decap' field does not exist. It should specify a list of decap cells. Filling with stdfiller instead.")
+        else:
+            decap_cells = decaps[0].name
+            decap_caps = []  # type: List[float]
+            if decaps[0].size is not None:
+                decap_caps = list(map(lambda x: CapacitanceValue(x).value_in_units("fF"), decaps[0].size))
+            if len(decap_cells) != len(decap_caps):
+                self.logger.error("Each decap cell in the name list must have a corresponding decapacitance value in the size list.")
+            decap_consts = list(filter(lambda x: x.target=="capacitance", self.get_decap_constraints()))
+            if len(decap_consts) > 0:
+                if decap_caps is None:
+                    self.logger.warning("No decap capacitances specified but decap constraints with target: 'capacitance' exist. Add decap capacitances to the tech plugin!")
+                else:
+                    for (cell, cap) in zip(decap_cells, decap_caps):
+                        self.append("add_decap_cell_candidates {CELL} {CAP}".format(CELL=cell, CAP=cap))
+                    for const in decap_consts:
+                        assert isinstance(const.capacitance, CapacitanceValue)
+                        area_str = ""
+                        if all(c is not None for c in (const.x, const.y, const.width, const.height)):
+                            assert isinstance(const.x, Decimal)
+                            assert isinstance(const.y, Decimal)
+                            assert isinstance(const.width, Decimal)
+                            assert isinstance(const.height, Decimal)
+                            area_str = " ".join(("-area", str(const.x), str(const.y), str(const.x+const.width), str(const.y+const.height)))
+                        self.verbose_append("add_decaps -effort high -total_cap {CAP} {AREA}".format(
+                            CAP=const.capacitance.value_in_units("fF"), AREA=area_str))
 
         if len(stdfillers) == 0:
             self.logger.warning(
                 "The technology plugin 'special cells: stdfiller' field does not exist. It should specify a list of (non IO) filler cells. No filler will be added. You can override this with an add_fillers hook if you do not specify filler cells in the technology plugin.")
         else:
-            stdfiller = stdfillers[0].name
-            filler_str = ""
-            for cell in stdfiller:
-                filler_str += str(cell) + ' '
-            self.append("set_db add_fillers_cells \"{FILLER}\"".format(FILLER=filler_str))
-            self.append("add_fillers")
+            # Decap cells as fillers
+            if len(decaps) > 0:
+                fill_cells = list(map(lambda c: str(c), decaps[0].name))
+                self.append("set_db add_fillers_cells \"{FILLER}\"".format(FILLER=" ".join(fill_cells)))
+                # Targeted decap constraints
+                decap_consts = list(filter(lambda x: x.target=="density", self.get_decap_constraints()))
+                for const in decap_consts:
+                    area_str = ""
+                    if all(c is not None for c in (const.x, const.y, const.width, const.height)):
+                        assert isinstance(const.x, Decimal)
+                        assert isinstance(const.y, Decimal)
+                        assert isinstance(const.width, Decimal)
+                        assert isinstance(const.height, Decimal)
+                        area_str = " ".join(("-area", str(const.x), str(const.y), str(const.x+const.width), str(const.y+const.height)))
+                    self.verbose_append("add_fillers -density {DENSITY} {AREA}".format(
+                        DENSITY=str(const.density), AREA=area_str))
+                # Or, fill everywhere if no decap constraints given
+                if len(self.get_decap_constraints()) == 0:
+                    self.verbose_append("add_fillers")
+
+            # Then the rest is stdfillers
+            fill_cells = list(map(lambda c: str(c), stdfillers[0].name))
+            self.append("set_db add_fillers_cells \"{FILLER}\"".format(FILLER=" ".join(fill_cells)))
+            self.verbose_append("add_fillers")
         return True
 
 
