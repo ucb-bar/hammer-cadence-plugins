@@ -34,15 +34,20 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
 
         return reduce(add_dicts, [dict(super().env_vars)] + list_of_vars + [cadence_vars], {})
 
+    def version_number_int(self, major: int, minor: int) -> int:
+        return major * 100 + minor
+
     def version_number(self, version: str) -> int:
         """
-        Assumes versions look like MAJOR_ISRMINOR and we will have less than 100 minor versions.
+        Assumes versions look like <MAJOR><SEPARATOR><MINOR_PREFIX><MINOR> and we will have less than 100 minor versions.
         """
-        main_version = int(version.split("_")[0]) # type: int
+        separator = self.get_setting("cadence.version_separator")
+        minor_prefix = self.get_setting("cadence.version_minor_prefix")
+        main_version = int(version.split(separator)[0]) # type: int
         minor_version = 0 # type: int
-        if "_" in version:
-            minor_version = int(version.split("_")[1][3:])
-        return main_version * 100 + minor_version
+        if separator in version:
+            minor_version = int(version.split(separator)[1][len(minor_prefix):])
+        return self.version_number_int(main_version, minor_version)
 
     def get_timing_libs(self, corner: Optional[MMMCCorner] = None) -> str:
         """

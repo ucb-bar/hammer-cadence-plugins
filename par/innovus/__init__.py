@@ -361,7 +361,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     else:
                         self.append("assign_signal_to_bump -bumps \"Bump_{x}.{y}\" -net {n}".format(x=bump.x, y=bump.y, n=bump.name))
                 self.append("create_route_blockage {layer_options} \"{llx} {lly} {urx} {ury}\"".format(
-                    layer_options="-layers {{{l}}} -rects".format(l=block_layer) if(self.version() >= self.version_number("181")) else "-cut_layers {{{l}}} -area".format(l=block_layer),
+                    layer_options="-layers {{{l}}} -rects".format(l=block_layer) if(self.version() >= self.version_number_int(18,1)) else "-cut_layers {{{l}}} -area".format(l=block_layer),
                     llx = "[get_db bump:Bump_{x}.{y} .bbox.ll.x]".format(x=bump.x, y=bump.y),
                     lly = "[get_db bump:Bump_{x}.{y} .bbox.ll.y]".format(x=bump.x, y=bump.y),
                     urx = "[get_db bump:Bump_{x}.{y} .bbox.ur.x]".format(x=bump.x, y=bump.y),
@@ -1013,7 +1013,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                             y=constraint.y,
                             urx=constraint.x+constraint.width,
                             ury=constraint.y+constraint.height,
-                            area_flag="rects" if self.version() >= self.version_number("181") else "area",
+                            area_flag="rects" if self.version() >= self.version_number_int(18,1) else "area",
                             layers="all" if constraint.layers is None else " ".join(get_or_else(constraint.layers, []))
                         ))
                     if ObstructionType.Power in obs_types:
@@ -1022,7 +1022,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                             y=constraint.y,
                             urx=constraint.x+constraint.width,
                             ury=constraint.y+constraint.height,
-                            area_flag="rects" if self.version() >= self.version_number("181") else "area",
+                            area_flag="rects" if self.version() >= self.version_number_int(18,1) else "area",
                             layers="all" if constraint.layers is None else " ".join(get_or_else(constraint.layers, []))
                         ))
                 else:
