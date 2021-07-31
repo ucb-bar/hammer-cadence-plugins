@@ -181,15 +181,10 @@ class Voltus(HammerPowerTool, CadenceTool):
 
             tech_options = base_options.copy()
             tech_options.extend(["-cell_type", "techonly"])
-            # Append list of fillers
+            # fillers, decaps
             stdfillers = self.technology.get_special_cell_by_type(CellType.StdFiller)
-            if len(stdfillers) > 0:
-                stdfillers_names = list(map(lambda f: str(f), stdfillers[0].name))
-                tech_options.extend(["-filler_cells", "{{ {} }} ".format(" ".join(stdfillers_names))])
             decaps = self.technology.get_special_cell_by_type(CellType.Decap)
-            if len(decaps) > 0:
-                decaps_names = list(map(lambda d: str(d), decaps[0].name))
-                tech_options.extend(["-decap_cells", "{{ {} }}".format(" ".join(decaps_names))])
+            tech_lib_sp = self.technology.read_libs([hammer_tech.filters.spice_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
 
             if not corners:
                 # Start with tech-only library
@@ -203,15 +198,26 @@ class Voltus(HammerPowerTool, CadenceTool):
 
                 # Next do stdcell library
                 options[options.index("techonly")] = "stdcells"
+                if len(stdfillers) > 0:
+                    stdfillers_names = list(map(lambda f: str(f), stdfillers[0].name))
+                    options.extend(["-filler_cells", "{{ {} }} ".format(" ".join(stdfillers_names))])
+                if len(decaps) > 0:
+                    decaps_names = list(map(lambda d: str(d), decaps[0].name))
+                    options.extend(["-decap_cells", "{{ {} }}".format(" ".join(decaps_names))])
                 spice_models = self.technology.read_libs([hammer_tech.filters.spice_model_file_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
                 spice_corners = self.technology.read_libs([hammer_tech.filters.spice_model_lib_corner_filter], hammer_tech.HammerTechnologyUtils.to_plain_item)
                 if len(spice_models) == 0:
-                    self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
+                    self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries! Skipping.")
                     return True
                 else:
                     options.extend(["-spice_models", " ".join(spice_models)])
                     if len(spice_corners) > 0:
                         options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                if len(decaps) > 0 and len(tech_lib_sp) == 0:
+                    self.logger.error("Must have Spice netlists in tech plugin for decap characterization in stdcell PG library! Skipping.")
+                    return True
+                else:
+                    options.extend(["-spice_subckts", "{{ {} }}".format(" ".join(tech_lib_sp))])
                 ts_output.append("set_pg_library_mode {}".format(" ".join(options)))
                 ts_output.append("write_pg_library -out_dir {}".format(self.stdcell_lib_dir))
 
@@ -229,15 +235,26 @@ class Voltus(HammerPowerTool, CadenceTool):
 
                     # Next do stdcell library
                     options[options.index("techonly")] = "stdcells"
+                    if len(stdfillers) > 0:
+                        stdfillers_names = list(map(lambda f: str(f), stdfillers[0].name))
+                        options.extend(["-filler_cells", "{{ {} }} ".format(" ".join(stdfillers_names))])
+                    if len(decaps) > 0:
+                        decaps_names = list(map(lambda d: str(d), decaps[0].name))
+                        options.extend(["-decap_cells", "{{ {} }}".format(" ".join(decaps_names))])
                     spice_models = self.get_mmmc_spice_models(corner)
                     spice_corners = self.get_mmmc_spice_corners(corner)
                     if len(spice_models) == 0:
-                        self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries")
+                        self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries! Skipping.")
                         return True
                     else:
                         options.extend(["-spice_models", " ".join(spice_models)])
                         if len(spice_corners) > 0:
                             options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                    if len(decaps) > 0 and len(tech_lib_sp) == 0:
+                        self.logger.error("Must have Spice netlists in tech plugin for decap characterization in stdcell PG library! Skipping.")
+                        return True
+                    else:
+                        options.extend(["-spice_subckts", "{{ {} }}".format(" ".join(tech_lib_sp))])
                     ts_output.append("set_pg_library_mode {}".format(" ".join(options)))
                     ts_output.append("write_pg_library -out_dir {}".format(os.path.join(self.stdcell_lib_dir, corner.name)))
 
