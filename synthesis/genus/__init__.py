@@ -288,7 +288,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         if (len(tie_hi_cells) != 1 or len (tie_lo_cells) != 1) and len (tie_hilo_cells) != 1:
             self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
             return True
-        use_tie_hilo_cell = (len (tie_hilo_cells) == 1)
+        use_separate_hi_lo = (len(tie_hi_cells) == 1 and len (tie_lo_cells) == 1)
 
         # Limit "no delay description exists" warnings
         self.verbose_append("set_db message:WSDF-201 .max_print 20")
@@ -296,15 +296,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         # If there is more than 1 corner or a certain type, use lib cells for only the active analysis view
         corner_counts = Counter(list(map(lambda c: c.type, self.get_mmmc_corners())))
-        if use_tie_hilo_cell: 
-            tie_hilo_cell = tie_hilo_cells[0].name[0]
-            if any(cnt>1 for cnt in corner_counts.values()):
-                self.verbose_append("set ACTIVE_VIEW [string map { .setup_view {} .hold_view {} .extra_view {} } [get_db analysis_view:[get_analysis_views] .name]]")
-                self.verbose_append("set HILO_TIEOFF [get_db base_cell:{TIE_HILO_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_HILO_CELL=tie_hilo_cell))
-                self.verbose_append("add_tieoffs -high_low $HILO_TIEOFF -max_fanout 1 -verbose")
-            else:
-                self.verbose_append("add_tieoffs -high_low {HILO_TIEOFF} -max_fanout 1 -verbose".format(HILO_TIEOFF=tie_hilo_cell))
-        else: # not use_tie_hilo_cells
+        if use_separate_hi_lo: # (use tiehicell/tielocell)
             tie_hi_cell = tie_hi_cells[0].name[0]
             tie_lo_cell = tie_lo_cells[0].name[0]
             if any(cnt>1 for cnt in corner_counts.values()):
@@ -314,6 +306,14 @@ class Genus(HammerSynthesisTool, CadenceTool):
                 self.verbose_append("add_tieoffs -high $HI_TIEOFF -low $LO_TIEOFF -max_fanout 1 -verbose")
             else:
                 self.verbose_append("add_tieoffs -high {HI_TIEOFF} -low {LO_TIEOFF} -max_fanout 1 -verbose".format(HI_TIEOFF=tie_hi_cell, LO_TIEOFF=tie_lo_cell))
+        else: # not use_separate_hi_lo (use tiehilocell)
+            tie_hilo_cell = tie_hilo_cells[0].name[0]
+            if any(cnt>1 for cnt in corner_counts.values()):
+                self.verbose_append("set ACTIVE_VIEW [string map { .setup_view {} .hold_view {} .extra_view {} } [get_db analysis_view:[get_analysis_views] .name]]")
+                self.verbose_append("set HILO_TIEOFF [get_db base_cell:{TIE_HILO_CELL} .lib_cells -if {{ .library.default_opcond == $ACTIVE_VIEW }}]".format(TIE_HILO_CELL=tie_hilo_cell))
+                self.verbose_append("add_tieoffs -high_low $HILO_TIEOFF -max_fanout 1 -verbose")
+            else:
+                self.verbose_append("add_tieoffs -high_low {HILO_TIEOFF} -max_fanout 1 -verbose".format(HILO_TIEOFF=tie_hilo_cell))
         return True
 
     def generate_reports(self) -> bool:
