@@ -33,3 +33,7 @@ par.innovus:
   # Note that this requires an optional licence (enccco).
   # type: bool
   use_cco: true
+
+  # Estimated power for early rail analysis.
+  # This shall be estimated for the typical supply given in vlsi.inputs.supplies.VDD in units of Watts
+  rail_analysis_power: 1

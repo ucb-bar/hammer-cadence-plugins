@@ -514,7 +514,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # TODO generate power data from synthesis or static power
         self.verbose_append("set_power_data -format area -bias_voltage {voltage} -power {power}".format(
             voltage=str(VoltageValue(self.get_setting("vlsi.inputs.supplies.VDD")).value_in_units("V")),
-            power=self.get_setting("par.rail_analysis_power")))
+            power=self.get_setting("par.innovus.rail_analysis_power")))
 
         corners = self.get_mmmc_corners()
         era_options = ["-method", "era_static",
