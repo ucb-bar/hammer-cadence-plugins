@@ -34,8 +34,12 @@ foreach layer [get_db layers] {
         # For now take the last one, since that appears to have correct data for colored metals
         set spacing_table [lrange [lindex [lindex $spacing_table 0] end] 2 end]
         set widths_and_spacings {}
-        foreach line $spacing_table {
-            lappend widths_and_spacings "\{\"width_at_least\": [lindex $line 1], \"min_spacing\": [lindex $line end]\}"
+        if { [llength $spacing_table] == 0} {
+            lappend widths_and_spacings "\{\"width_at_least\": 0.0, \"min_spacing\": $min_spacing\}"
+        } else {
+            foreach line $spacing_table {
+                lappend widths_and_spacings "\{\"width_at_least\": [lindex $line 1], \"min_spacing\": [lindex $line end]\}"
+            }
         }
         set output "        \{"
         append output "\"name\": \"$name\", "
