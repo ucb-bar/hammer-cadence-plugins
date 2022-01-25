@@ -11,10 +11,11 @@ from itertools import product
 
 import os
 import errno
+import textwrap
 
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
 from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
-    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType
+    PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType, VoltageValue
 from hammer_vlsi.units import CapacitanceValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
@@ -216,6 +217,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.power_straps,
             self.place_pins,
             self.place_opt_design,
+            self.early_rail,
             self.clock_tree,
             self.add_fillers,
             self.route_design,
@@ -493,6 +495,95 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def place_opt_design(self) -> bool:
         """Place the design and do pre-routing optimization."""
         self.verbose_append("place_opt_design")
+        return True
+
+    @property
+    def ran_early_rail(self) -> bool:
+        """The early_rail step sets this to True if it was run."""
+        return self.attr_getter("_ran_early_rail", False)
+
+    @ran_early_rail.setter
+    def ran_early_rail(self, val: bool) -> None:
+        self.attr_setter("_ran_early_rail", val)
+
+    def early_rail(self) -> bool:
+        """
+        Early rail analysis on power-gridded and partially-placed design.
+        This does not require a Voltus license.
+        """
+        # TODO generate power data from synthesis or static power
+        self.verbose_append("set_power_data -format area -bias_voltage {voltage} -power {power}".format(
+            voltage=str(VoltageValue(self.get_setting("vlsi.inputs.supplies.VDD")).value_in_units("V")),
+            power=self.get_setting("par.innovus.rail_analysis_power")))
+
+        corners = self.get_mmmc_corners()
+        era_options = ["-method", "era_static",
+                       "-accuracy", "xd",
+                       "-verbosity", "true"]
+        output_dir = "earlyRailReports"
+
+        spec_mode = self.get_setting("vlsi.inputs.power_spec_mode")  # type: str
+        if spec_mode == "empty":
+            power_supplies = self.get_independent_power_nets()  # type: List[Supply]
+            power_nets = " ".join(map(lambda s: s.name, power_supplies))
+            ground_supplies = self.get_independent_ground_nets()  # type: List[Supply]
+            ground_nets = " ".join(map(lambda s: s.name, ground_supplies))
+            vdd_v = VoltageValue(self.get_setting("vlsi.inputs.supplies.VDD")).value_in_units("V")
+            vss_v = VoltageValue(self.get_setting("vlsi.inputs.supplies.VSS")).value_in_units("V")
+            thresh = vdd_v * 0.1 # TODO make this configurable, but is same as using analysis views
+            for p in power_supplies:
+                self.append("""
+                set_pg_nets -net {net} -voltage {VDD} -threshold {VDD_thresh}
+                set_power_pads -net {net} -format defpin
+                """.format(net=p.name, VDD=str(vdd_v), VDD_thresh=str(vdd_v-thresh)))
+            for g in ground_supplies:
+                self.append("""
+                seg_pg_nets -net {net} -voltage {VSS} -threshold {VSS_thresh}
+                set_power_pads -net {net} -format defpin
+                """.format(net=g.name, VSS=str(vss_v), VSS_thresh=str(vss_v+thresh)))
+            self.verbose_append("set_rail_analysis_config {options}".format(options=" ".join(era_options)))
+            for pg in power_supplies + ground_supplies:
+                self.verbose_append("report_rail -output_dir {odir} -type net {net}".format(odir=output_dir, net=pg))
+
+        else: # Use analysis views
+            # TODO: support multiple nets in the same power domain, different domain voltages
+            self.append("""
+            set p_nets [get_db power_domains .primary_power_net.base_name]
+            foreach net $p_nets {
+                set_power_pads -net $net -format defpin
+            }
+            set g_nets [get_db power_domains .primary_ground_net.base_name]
+            foreach net $g_nets {
+                set_power_pads -net $net -format defpin
+            }""")
+
+            if not corners:
+                # TODO: remove hardcoded my_view string
+                analysis_view_name = "my_view"
+                options = era_options.copy()
+                options.extend(["-analysis_view", analysis_view_name])
+                self.verbose_append("set_rail_analysis_config {options}".format(options=" ".join(options)))
+                self.verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
+            else:
+                for corner in corners:
+                    # Setting up views for all defined corner types: setup, hold, extra
+                    if corner.type is MMMCCornerType.Setup:
+                        view_name = "{c}.setup_view".format(c=corner.name)
+                    elif corner.type is MMMCCornerType.Hold:
+                        view_name = "{c}.hold_view".format(c=corner.name)
+                    elif corner.type is MMMCCornerType.Extra:
+                        view_name = "{c}.extra_view".format(c=corner.name)
+                    else:
+                        raise ValueError("Unsupported MMMCCornerType")
+                    options = era_options.copy()
+                    options.extend([
+                        "-analysis_view", view_name,
+                        "-temperature", str(corner.temp.value)
+                    ])
+                    self.verbose_append("set_rail_analysis_config {options}".format(options=" ".join(options)))
+                    self.verbose_append("report_rail -output_dir {} -type domain ALL".format(output_dir))
+
+        self.ran_early_rail = True
         return True
 
     def clock_tree(self) -> bool:
@@ -829,6 +920,18 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
         with open(self.open_chip_tcl, "w") as f:
             f.write("read_db latest")
+            if self.ran_early_rail:
+                f.write(textwrap.dedent("""
+                cd earlyRailReports
+                set latest_rail_dir [exec ls -t | head -n1]
+                cd ..
+                read_power_rail_results -rail_directory earlyRailReports/$latest_rail_dir
+                gui_show
+                puts "\n*** Display early rail analysis results from earlyRailReports/$latest_rail_dir? \[y/n\] ***\n"
+                set era_disp [gets stdin]
+                if {$era_disp == "y" | $era_disp == "Y"} {
+                    \tgui_set_power_rail_display -plot ivdn -enable_voltage_sources true
+                }"""))
 
         with open(self.open_chip_script, "w") as f:
             f.write("""#!/bin/bash
