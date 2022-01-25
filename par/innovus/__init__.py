@@ -167,7 +167,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def do_pre_steps(self, first_step: HammerToolStep) -> bool:
         assert super().do_pre_steps(first_step)
         # Restore from the last checkpoint if we're not starting over.
-        if first_step.name != "init_design":
+        if first_step != self.first_step:
             self.verbose_append("read_db pre_{step}".format(step=first_step.name))
         return True
 
@@ -827,8 +827,11 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
         # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
+        self.output.clear()
         with open(self.open_chip_tcl, "w") as f:
-            f.write("read_db latest")
+            assert super().do_pre_steps(self.first_step)
+            self.append("read_db latest")
+            f.write("\n".join(self.output))
 
         with open(self.open_chip_script, "w") as f:
             f.write("""#!/bin/bash

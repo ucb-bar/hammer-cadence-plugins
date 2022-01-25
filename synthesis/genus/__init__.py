@@ -102,8 +102,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     def do_pre_steps(self, first_step: HammerToolStep) -> bool:
         assert super().do_pre_steps(first_step)
-        # If the first step isn't init_environment, then reload from a checkpoint.
-        if first_step.name != "init_environment":
+        # Reload from the last checkpoint if we're not starting over.
+        if first_step != self.first_step:
             self.verbose_append("read_db pre_{step}".format(step=first_step.name))
         return True
 
