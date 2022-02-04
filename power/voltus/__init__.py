@@ -171,7 +171,6 @@ class Voltus(HammerPowerTool, CadenceTool):
         tech_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
         if len(tech_pg_libs) > 0:
             self.logger.info("Technology already provides PG libraries. Moving onto macro PG libraries.")
-            self.ran_tech_stdcell_pgv = True
 	    # Else, characterize tech & stdcell libraries only once
         elif not os.path.isdir(self.tech_lib_dir) or not os.path.isdir(self.stdcell_lib_dir):
             self.logger.info("Generating techonly and stdcell PG libraries for the first time...")
