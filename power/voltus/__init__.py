@@ -537,7 +537,11 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
-        waveform_format_map = {".vcd": "vcd", ".vpd": "vcd", ".fsdb": "fsdb", ".shm": "shm"}
+        waveform_format_map = {".vcd": "vcd",
+                               ".vpd": "vcd",
+                               ".fsdb": "fsdb",
+                               ".shm": "shm",
+                               ".trn": "shm"}
         for waveform_path, waveform_stime, waveform_etime in zip(self.waveforms, start_times, end_times):
             stime_ns = TimeValue(waveform_stime).value_in_units("ns")
             etime_ns = TimeValue(waveform_etime).value_in_units("ns")
