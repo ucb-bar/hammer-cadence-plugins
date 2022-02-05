@@ -354,9 +354,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                         self.logger.error("Must specify Spice model files in tech plugin to generate macro PG libraries")
                         return True
                     else:
-                        options.extend(["-spice_models", " ".join(spice_models)])
+                        options.extend(["-spice_models", "{", " ".join(spice_models), "}"])
                         if len(spice_corners) > 0:
-                            options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                            options.extend(["-spice_corners", "{{", "} {".join(spice_corners), "}}"])
                     m_output.append("set_pg_library_mode {}".format(" ".join(options)))
                     m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
 
