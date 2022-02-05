@@ -209,9 +209,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                     self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries! Skipping.")
                     return True
                 else:
-                    options.extend(["-spice_models", " ".join(spice_models)])
+                    options.extend(["-spice_models", "{", " ".join(spice_models), "}"])
                     if len(spice_corners) > 0:
-                        options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                        options.extend(["-spice_corners", "{{", "} {".join(spice_corners), "}}"])
                 if len(decaps) > 0 and len(tech_lib_sp) == 0:
                     self.logger.error("Must have Spice netlists in tech plugin for decap characterization in stdcell PG library! Skipping.")
                     return True
@@ -246,9 +246,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                         self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries! Skipping.")
                         return True
                     else:
-                        options.extend(["-spice_models", " ".join(spice_models)])
+                        options.extend(["-spice_models", "{", " ".join(spice_models), "}"])
                         if len(spice_corners) > 0:
-                            options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                            options.extend(["-spice_corners", "{{", "} {".join(spice_corners), "}}"])
                     if len(decaps) > 0 and len(tech_lib_sp) == 0:
                         self.logger.error("Must have Spice netlists in tech plugin for decap characterization in stdcell PG library! Skipping.")
                         return True
