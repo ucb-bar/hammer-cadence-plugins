@@ -284,10 +284,14 @@ class Genus(HammerSynthesisTool, CadenceTool):
     def add_tieoffs(self) -> bool:
         tie_hi_cells = self.technology.get_special_cell_by_type(CellType.TieHiCell)
         tie_lo_cells = self.technology.get_special_cell_by_type(CellType.TieLoCell)
+        tie_hilo_cells = self.technology.get_special_cell_by_type(CellType.TieHiLoCell)
 
         if len(tie_hi_cells) != 1 or len (tie_lo_cells) != 1:
-            self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
-            return True
+            if len(tie_hilo_cells) != 1:
+                self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
+                return True
+            tie_hi_cells = tie_hilo_cells
+            tie_lo_cells = tie_hilo_cells            
 
         tie_hi_cell = tie_hi_cells[0].name[0]
         tie_lo_cell = tie_lo_cells[0].name[0]
