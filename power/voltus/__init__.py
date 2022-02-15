@@ -158,7 +158,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         corners = self.get_mmmc_corners()
 
 	    # Options for set_pg_library_mode
-        base_options = []  # type: List[str]
+        base_options = ["-enable_distributed_processing", "true"]  # type: List[str]
         if self.get_setting("power.voltus.lef_layer_map"):
             base_options.extend(["-lef_layer_map", self.get_setting("power.voltus.lef_layer_map")])
 
@@ -171,7 +171,6 @@ class Voltus(HammerPowerTool, CadenceTool):
         tech_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
         if len(tech_pg_libs) > 0:
             self.logger.info("Technology already provides PG libraries. Moving onto macro PG libraries.")
-            self.ran_tech_stdcell_pgv = True
 	    # Else, characterize tech & stdcell libraries only once
         elif not os.path.isdir(self.tech_lib_dir) or not os.path.isdir(self.stdcell_lib_dir):
             self.logger.info("Generating techonly and stdcell PG libraries for the first time...")
@@ -210,9 +209,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                     self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries! Skipping.")
                     return True
                 else:
-                    options.extend(["-spice_models", " ".join(spice_models)])
+                    options.extend(["-spice_models", "{", " ".join(spice_models), "}"])
                     if len(spice_corners) > 0:
-                        options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                        options.extend(["-spice_corners", "{{", "} {".join(spice_corners), "}}"])
                 if len(decaps) > 0 and len(tech_lib_sp) == 0:
                     self.logger.error("Must have Spice netlists in tech plugin for decap characterization in stdcell PG library! Skipping.")
                     return True
@@ -247,9 +246,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                         self.logger.error("Must specify Spice model files in tech plugin to generate stdcell PG libraries! Skipping.")
                         return True
                     else:
-                        options.extend(["-spice_models", " ".join(spice_models)])
+                        options.extend(["-spice_models", "{", " ".join(spice_models), "}"])
                         if len(spice_corners) > 0:
-                            options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                            options.extend(["-spice_corners", "{{", "} {".join(spice_corners), "}}"])
                     if len(decaps) > 0 and len(tech_lib_sp) == 0:
                         self.logger.error("Must have Spice netlists in tech plugin for decap characterization in stdcell PG library! Skipping.")
                         return True
@@ -355,9 +354,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                         self.logger.error("Must specify Spice model files in tech plugin to generate macro PG libraries")
                         return True
                     else:
-                        options.extend(["-spice_models", " ".join(spice_models)])
+                        options.extend(["-spice_models", "{", " ".join(spice_models), "}"])
                         if len(spice_corners) > 0:
-                            options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                            options.extend(["-spice_corners", "{{", "} {".join(spice_corners), "}}"])
                     m_output.append("set_pg_library_mode {}".format(" ".join(options)))
                     m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
 
@@ -375,9 +374,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                             self.logger.error("Must specify Spice model files in tech plugin to generate macro PG libraries")
                             return True
                         else:
-                            options.extend(["-spice_models", " ".join(spice_models)])
+                            options.extend(["-spice_models", "{", " ".join(spice_models), "}"])
                             if len(spice_corners) > 0:
-                                options.extend(["-spice_corners", "{", "} {".join(spice_corners), "}"])
+                                options.extend(["-spice_corners", "{{", "} {".join(spice_corners), "}}"])
                         m_output.append("set_pg_library_mode {}".format(" ".join(options)))
                         m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
 
@@ -537,14 +536,23 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
-        for vcd_path, vcd_stime, vcd_etime in zip(self.waveforms, start_times, end_times):
-            stime_ns = TimeValue(vcd_stime).value_in_units("ns")
-            etime_ns = TimeValue(vcd_etime).value_in_units("ns")
-            verbose_append("read_activity_file -reset -format VCD {VCD_PATH} -start {stime}ns -end {etime}ns -scope {TESTBENCH}".format(VCD_PATH=os.path.join(os.getcwd(), vcd_path), TESTBENCH=tb_scope, stime=stime_ns, etime=etime_ns))
-            vcd_file = os.path.basename(vcd_path)
+        waveform_format_map = {".vcd": "vcd",
+                               ".vpd": "vcd",
+                               ".fsdb": "fsdb",
+                               ".shm": "shm",
+                               ".trn": "shm"}
+        for waveform_path, waveform_stime, waveform_etime in zip(self.waveforms, start_times, end_times):
+            stime_ns = TimeValue(waveform_stime).value_in_units("ns")
+            etime_ns = TimeValue(waveform_etime).value_in_units("ns")
+            # Set format intelligently based on file extension. Strip .gz if present.
+            waveform_ext = os.path.splitext(waveform_path.rstrip(".gz"))[1].lower()
+            if waveform_format_map.get(waveform_ext) is None:
+                self.logger.error("Only VCD/VPD, FSDB, and SHM waveform formats supported.")
+            verbose_append("read_activity_file -reset -format {FORMAT} {WAVEFORM_PATH} -start {stime}ns -end {etime}ns -scope {TESTBENCH}".format(FORMAT=waveform_format_map.get(waveform_ext), WAVEFORM_PATH=os.path.join(os.getcwd(), waveform_path), TESTBENCH=tb_scope, stime=stime_ns, etime=etime_ns))
+            waveform_file = os.path.basename(waveform_path)
             # Report based on MMMC mode
             if not corners:
-                verbose_append("report_power -out_dir activePower.{VCD_FILE}".format(VCD_FILE=vcd_file))
+                verbose_append("report_power -out_dir activePower.{WAVEFORM_FILE}".format(WAVEFORM_FILE=waveform_file))
             else:
                 for corner in corners:
                     # Setting up views for all defined corner types: setup, hold, extra
@@ -556,9 +564,9 @@ class Voltus(HammerPowerTool, CadenceTool):
                         view_name = "{c}.extra_view".format(c=corner.name)
                     else:
                         raise ValueError("Unsupported MMMCCornerType")
-                    verbose_append("report_power -view {VIEW} -out_dir activePowerReports.{VCD_FILE}.{VIEW}".format(VIEW=view_name, VCD_FILE=vcd_file))
+                    verbose_append("report_power -view {VIEW} -out_dir activePowerReports.{WAVEFORM_FILE}.{VIEW}".format(VIEW=view_name, WAVEFORM_FILE=waveform_file))
 
-            verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{VCD_FILE}".format(VCD_FILE=vcd_file))
+            verbose_append("report_vector_profile -detailed_report true -out_file activePowerProfile.{WAVEFORM_FILE}".format(WAVEFORM_FILE=waveform_file))
 
         verbose_append("set_db power_method dynamic")
         for saif_path in self.saifs:
@@ -694,8 +702,8 @@ class Voltus(HammerPowerTool, CadenceTool):
         passed = self.rail_analysis("dynamic", "activePowerReports", "activeRailReports")
 
         # Vectorbased databases
-        for vcd_path in self.waveforms:
-            passed = self.rail_analysis("dynamic", "activePower." + os.path.basename(vcd_path), "activeRailReports." + os.path.basename(vcd_path))
+        for waveform_path in self.waveforms:
+            passed = self.rail_analysis("dynamic", "activePower." + os.path.basename(waveform_path), "activeRailReports." + os.path.basename(waveform_path))
         for saif_path in self.saifs:
             saif_file=".".join(saif_path.split('/')[-2:])
             passed = self.rail_analysis("dynamic", "activePower." + saif_file, "activeRailReports." + saif_file)
