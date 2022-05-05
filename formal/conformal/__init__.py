@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+#  hammer-vlsi plugin for Cadence Conformal.
+#
+#  See LICENSE for licence details.
+
+from typing import List, Dict, Optional, Callable, Tuple, Set, Any, cast
+
+import os
+import sys
+import errno
+
+from hammer_vlsi import HammerTool, HammerFormalTool, HammerToolStep, HammerToolHookAction
+from hammer_logging import HammerVLSILogging
+import hammer_tech
+
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
+from tool import CadenceTool
+
+class Conformal(HammerFormalTool, CadenceTool):
+
+    def export_config_outputs(self) -> Dict[str, Any]:
+        outputs = dict(super().export_config_outputs())
+        # TODO(edwardw): find a "safer" way of passing around these settings keys.
+        return outputs
+
+    def fill_outputs(self) -> bool:
+        return True
+
+    def tool_config_prefix(self) -> str:
+        return "formal.conformal"
+
+    @property
+    def start_cmd(self) -> List[str]:
+        """ Generate required startup command based on the requested check and license level """
+        lec_bin = self.get_setting("formal.conformal.conformal_lec_bin")
+        ccd_bin = self.get_setting("formal.conformal.conformal_ccd_bin")
+        license = self.get_setting("formal.conformal.license")
+        if not license in ["L", "XL", "GXL"]:
+            self.logger.error("License must be L, XL, or GXL. For CCD, -MCC is equivalent to GXL here.")
+            return ["", ""]
+
+        if self.check == "lec":
+            return [lec_bin, f"-{license}"]
+        elif self.check == "power":
+            if license == "L":
+                self.logger.error("power not supported with L license")
+            else:
+                return [lec_bin, f"-LP{license}"]
+        elif self.check == "eco":
+            if license == "L":
+                self.logger.error("eco not supported with L license")
+            elif license == "XL":
+                return [lec_bin, "-ECO"]
+            else:
+                return [lec_bin, "-ECOGXL"]
+        elif self.check == "property":
+            return [lec_bin, "-VERIFY"]
+        elif self.check in ["constraint", "cdc"]:
+            if license == "GXL":
+                return [ccd_bin, "-MCC"]
+            else:
+                return [ccd_bin, f"-{license}"]
+        else:
+            self.logger.error("Unsupported check type")
+            return ["", ""]
+
+    def check_reference_files(self, extensions: List[str]) -> bool:
+        """
+        Verify that reference files exist and have the specified extensions.
+        Analogous to check_input_files in HammerTool.
+
+        :param extensions: List of extensions e.g. [".v", ".sv"]
+        :return: True if all files exist and have the specified extensions.
+        """
+        refs = self.reference_files
+        error = False
+        for r in refs:
+            if not r.endswith(tuple(extensions)):
+                self.logger.error(f"Input of unsupported type {r} detected!")
+                error = True
+            if not os.path.isfile(r):
+                self.logger.error(f"Input file {r} does not exist!")
+                error = True
+        return not error
+
+    @property
+    def restore_checkpoint(self) -> str:
+        """ Name of checkpoint to be restored (set by do_pre_steps) """
+        return self.attr_getter("_restore_checkpoint", "")
+
+    @restore_checkpoint.setter
+    def restore_checkpoint(self, val: str) -> None:
+        self.attr_setter("_restore_checkpoint", val)
+
+    def do_pre_steps(self, first_step: HammerToolStep) -> bool:
+        assert super().do_pre_steps(first_step)
+        # Restore from the last checkpoint if we're not starting over.
+        # Not in the dofile, must be a command-line option
+        if first_step != self.first_step:
+            restore_checkpoint = f"pre_{first_step.name}"
+        return True
+
+    def do_between_steps(self, prev: HammerToolStep, next: HammerToolStep) -> bool:
+        assert super().do_between_steps(prev, next)
+        # Write a checkpoint to disk.
+        self.verbose_append(f"checkpoint pre_{next.name}")
+        # Symlink the checkpoint to latest for open_checkpoint script later.
+        self.verbose_append(f"ln -sfn pre_{next.name} latest")
+        self._step_transitions = self._step_transitions + [(prev.name, next.name)]
+        return True
+
+    def do_post_steps(self) -> bool:
+        assert super().do_post_steps()
+        # Create symlinks for post_<step> to pre_<step+1> to improve usability.
+        try:
+            for prev, next in self._step_transitions:
+                os.symlink(
+                    os.path.join(self.run_dir, f"pre_{next}"), # src
+                    os.path.join(self.run_dir, f"post_{next}") # dst
+                )
+        except OSError as e:
+            if e.errno != errno.EXIST:
+                self.logger.warning("Failed to create post_* symlinks: " + str(e))
+
+        # Create checkpoint post_<last step>
+        # TODO: this doesn't work if you're only running the very last step
+        if len(self._step_transitions) > 0:
+            last = f"post_{self._step_transitions[-1][1]}"
+            self.verbose_append(f"checkpoint {last}")
+            # Symlink the database to latest for open_checkpoint script later.
+            self.verbose_append(f"ln -sfn {last} latest")
+
+        return self.run_conformal()
+
+    def get_tool_hooks(self) -> List[HammerToolHookAction]:
+        #return [self.make_persistent_hook(conformal_global_settings)]
+        return []
+
+    @property
+    def steps(self) -> List[HammerToolStep]:
+        if self.check != "lec":
+            self.logger.error("Check type {self.check} not yet supported!")
+        steps = [
+            self.setup_designs,
+            self.compare_designs
+        ]
+        return self.make_steps_from_methods(steps)
+
+    def setup_designs(self) -> bool:
+        """ Setup the designs """
+        verbose_append = self.verbose_append
+
+        # Multithreading (max 16 allowed by tool)
+        max_threads = max(self.get_setting("vlsi.core.max_threads"), 16)
+        verbose_append(f"set_parallel_option -threads 1,{max_threads}")
+
+        # Set top module
+        verbose_apend(f"set_root_module {self.top_module} -both")
+
+        # Read libraries (macros, stdcells)
+        # TODO: Support mixed languages. Need to use -append option for each file type and -noelaborate
+        verilog_libs = self.technology.read_libs(
+                [hammer_tech.verilog_synth_filter],
+                hammer_tech.HammerTechnologyUtils.to_plain_item)
+        verilog_libs.extend(self.technology.read_libs(
+                [hammer_tech.verilog_sim_filter],
+                hammer_tech.HammerTechnologyUtils.to_plain_item))
+        verbose_append(f"read_library {' '.join(verilog_libs} -verilog -bboxsolver -both -verbose")
+
+        # Read designs
+        valid_exts = [".v", ".v.gz"]
+        if not self.check_input_files(valid_exts) or not self.check_reference_files(valid_exts):
+            return False
+        golden_verilog = list(map(lambda name: os.path.join(os.getcwd(), name), self.reference_files))
+        verbose_append(f"read_design {' '.join(golden_verilog)} -verilog -golden -verbose")
+        revised_verilog = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))
+        verbose_append(f"read_design {' '.join(revised_verilog)} -verilog -revised -verbose")
+
+        # Auto setup analysis optimizations
+        if self.get_setting("formal.conformal.license") != "L":
+            verbose_append("set_analyze_option -auto")
+
+        # Setup reports
+        verbose_append("report_design_data")
+
+        return True
+
+    def compare_designs(self) -> bool:
+        """ Depending on license, performs flat comparison or invokes SmartLEC hierarchical """
+        verbose_append = self.verbose_append
+
+        if self.get_setting("formal.conformal.license") == "L":
+            verbose_append("report_black_box")
+            verbose_append("set_system_mode lec")
+            verbose_append("add_compare_point -all")
+            verbose_append("compare")
+            verbose_append("report_compare_data")
+        else:
+            verbose_append("set_hier_compare_selection -smart")
+            # TODO: Genus & DC-synthesized netlists can use extra info (implementation details/resource file)
+            verbose_append('write_hier_compare_do_file hier.do -compare_string "analyze_compare -verbose"')
+            verbose_append("go_hier_compare hier.do")
+
+        verbose_append("report_statistics")
+
+        return True
+
+    @property
+    def generated_scripts_dir(self) -> str:
+        return os.path.join(self.run_dir, "generated-scripts")
+
+    def run_conformal(self) -> bool:
+        # Make sure that generated-scripts exists.
+        os.makedirs(self.generated_scripts_dir, exist_ok=True)
+
+        # Script to open results checkpoint
+        # TODO: start the mapping manager if error code required it with set_gui -mapping
+        with open(os.path.join(self.generate_scripts_dir, "open_checkpoint")) as f:
+            args = self.start_cmd
+            args.extend(["-gui", "-restart_checkpoint", self.restore_checkpoint])
+            f.write("#!/bin/bash")
+            f.write(" ".join(args))
+
+        # Quit
+        self.append("exit")
+
+        # Write main dofile
+        dofile = os.path.join(self.run_dir, f"{self.check}.tcl")
+        with open(dofile, "w") as f:
+            f.write("\n".join(self.output))
+
+        # Build args
+        args = self.start_cmd
+        args.extend([
+            "-nogui",
+            "-color",
+            "-tclmode",
+            "dofile", dofile
+        ])
+
+        # Temporarily disable colours/tag to make run output more readable.
+        # TODO: think of a more elegant way to do this?
+        HammerVLSILogging.enable_colour = False
+        HammerVLSILogging.enable_tag = False
+        self.run_executable(args, cwd=self.run_dir)
+        # TODO: check for errors and deal with them
+        # According to user guide:
+        # Bit   Condition
+        # 0     Internal error
+        # 1     Exit status before comparison
+        # 2     Command error
+        # 3     Unmapped points
+        # 4     Non-equivalent points
+        # 5     Abort or uncompared points exist during any comparison
+        # 6     Abort or uncompared points exist during last comparison
+        HammerVLSILogging.enable_colour = True
+        HammerVLSILogging.enable_tag = True
+
+        # TODO: check that formal run was successful
+
+        return True
+
+def conformal_global_settings(ht: HammerTool) -> bool:
+    """Settings that need to be applied at every tool invocation"""
+    assert isinstance(ht, HammerFormalTool)
+    assert isinstance(ht, CadenceTool)
+
+    # Multithreading (max 16 allowed by tool)
+    max_threads = max(ht.get_setting("vlsi.core.max_threads"), 16)
+    self.verbose_append(f"set_parallel_option -threads 1,{max_threads}")
+
+    return True
+
+tool = Conformal
