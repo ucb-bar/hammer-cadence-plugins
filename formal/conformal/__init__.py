@@ -41,34 +41,35 @@ class Conformal(HammerFormalTool, CadenceTool):
         lec_bin = self.get_setting("formal.conformal.conformal_lec_bin")
         ccd_bin = self.get_setting("formal.conformal.conformal_ccd_bin")
         license = self.get_setting("formal.conformal.license")
+        cmd = ["", ""]
         if not license in ["L", "XL", "GXL"]:
             self.logger.error("License must be L, XL, or GXL. For CCD, -MCC is equivalent to GXL here.")
-            return ["", ""]
 
         if self.check == "lec":
-            return [lec_bin, f"-{license}"]
+            cmd = [lec_bin, f"-{license}"]
         elif self.check == "power":
             if license == "L":
                 self.logger.error("power not supported with L license")
             else:
-                return [lec_bin, f"-LP{license}"]
+                cmd = [lec_bin, f"-LP{license}"]
         elif self.check == "eco":
             if license == "L":
                 self.logger.error("eco not supported with L license")
             elif license == "XL":
-                return [lec_bin, "-ECO"]
+                cmd = [lec_bin, "-ECO"]
             else:
-                return [lec_bin, "-ECOGXL"]
+                cmd = [lec_bin, "-ECOGXL"]
         elif self.check == "property":
             return [lec_bin, "-VERIFY"]
         elif self.check in ["constraint", "cdc"]:
             if license == "GXL":
-                return [ccd_bin, "-MCC"]
+                cmd = [ccd_bin, "-MCC"]
             else:
-                return [ccd_bin, f"-{license}"]
+                cmd = [ccd_bin, f"-{license}"]
         else:
             self.logger.error("Unsupported check type")
-            return ["", ""]
+
+        return cmd
 
     def check_reference_files(self, extensions: List[str]) -> bool:
         """
