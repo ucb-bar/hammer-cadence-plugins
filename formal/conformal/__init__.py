@@ -18,15 +18,10 @@ import hammer_tech
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
 from tool import CadenceTool
 
+# Notes: Tcl mode is enabled for harmonization with other Cadence tools and additional Tcl functionality.
+# There is a minor performance hit with database operations vs. native language.
+
 class Conformal(HammerFormalTool, CadenceTool):
-
-    def export_config_outputs(self) -> Dict[str, Any]:
-        outputs = dict(super().export_config_outputs())
-        # TODO(edwardw): find a "safer" way of passing around these settings keys.
-        return outputs
-
-    def fill_outputs(self) -> bool:
-        return True
 
     def tool_config_prefix(self) -> str:
         return "formal.conformal"
@@ -86,28 +81,42 @@ class Conformal(HammerFormalTool, CadenceTool):
         return not error
 
     @property
-    def restore_checkpoint(self) -> str:
-        """ Name of checkpoint to be restored (set by do_pre_steps) """
-        return self.attr_getter("_restore_checkpoint", "")
+    def restart_checkpoint(self) -> str:
+        """ Name of checkpoint to be restarted from (set by do_pre_steps) """
+        return self.attr_getter("_restart_checkpoint", "")
 
-    @restore_checkpoint.setter
-    def restore_checkpoint(self, val: str) -> None:
-        self.attr_setter("_restore_checkpoint", val)
+    @restart_checkpoint.setter
+    def restart_checkpoint(self, val: str) -> None:
+        self.attr_setter("_restart_checkpoint", val)
+
+    @property
+    def _step_transitions(self) -> List[Tuple[str, str]]:
+        """
+        Private helper property to keep track of which steps we ran so that we
+        can create symlinks.
+        This is a list of (pre, post) steps
+        """
+        return self.attr_getter("__step_transitions", [])
+
+    @_step_transitions.setter
+    def _step_transitions(self, value: List[Tuple[str, str]]) -> None:
+        self.attr_setter("__step_transitions", value)
+
 
     def do_pre_steps(self, first_step: HammerToolStep) -> bool:
         assert super().do_pre_steps(first_step)
-        # Restore from the last checkpoint if we're not starting over.
+        # Restart from the last checkpoint if we're not starting over.
         # Not in the dofile, must be a command-line option
         if first_step != self.first_step:
-            restore_checkpoint = f"pre_{first_step.name}"
+            self.restart_checkpoint = f"pre_{first_step.name}"
         return True
 
     def do_between_steps(self, prev: HammerToolStep, next: HammerToolStep) -> bool:
         assert super().do_between_steps(prev, next)
         # Write a checkpoint to disk.
-        self.verbose_append(f"checkpoint pre_{next.name}")
+        self.append(f"checkpoint pre_{next.name} -replace")
         # Symlink the checkpoint to latest for open_checkpoint script later.
-        self.verbose_append(f"ln -sfn pre_{next.name} latest")
+        self.append(f"ln -sfn pre_{next.name} latest")
         self._step_transitions = self._step_transitions + [(prev.name, next.name)]
         return True
 
@@ -118,25 +127,25 @@ class Conformal(HammerFormalTool, CadenceTool):
             for prev, next in self._step_transitions:
                 os.symlink(
                     os.path.join(self.run_dir, f"pre_{next}"), # src
-                    os.path.join(self.run_dir, f"post_{next}") # dst
+                    os.path.join(self.run_dir, f"post_{prev}") # dst
                 )
         except OSError as e:
-            if e.errno != errno.EXIST:
+            if e.errno != errno.EEXIST:
                 self.logger.warning("Failed to create post_* symlinks: " + str(e))
 
         # Create checkpoint post_<last step>
         # TODO: this doesn't work if you're only running the very last step
         if len(self._step_transitions) > 0:
             last = f"post_{self._step_transitions[-1][1]}"
-            self.verbose_append(f"checkpoint {last}")
+            self.append(f"checkpoint {last} -replace")
             # Symlink the database to latest for open_checkpoint script later.
-            self.verbose_append(f"ln -sfn {last} latest")
+            self.append(f"ln -sfn {last} latest")
 
         return self.run_conformal()
 
-    def get_tool_hooks(self) -> List[HammerToolHookAction]:
-        #return [self.make_persistent_hook(conformal_global_settings)]
-        return []
+#    def get_tool_hooks(self) -> List[HammerToolHookAction]:
+#        #return [self.make_persistent_hook(conformal_global_settings)]
+#        return []
 
     @property
     def steps(self) -> List[HammerToolStep]:
@@ -150,60 +159,64 @@ class Conformal(HammerFormalTool, CadenceTool):
 
     def setup_designs(self) -> bool:
         """ Setup the designs """
-        verbose_append = self.verbose_append
+        append = self.append
+
+        # Exit on dofile error
+        append("set_dofile_abort exit")
 
         # Multithreading (max 16 allowed by tool)
         max_threads = max(self.get_setting("vlsi.core.max_threads"), 16)
-        verbose_append(f"set_parallel_option -threads 1,{max_threads}")
-
-        # Set top module
-        verbose_apend(f"set_root_module {self.top_module} -both")
+        append(f"set_parallel_option -threads 1,{max_threads}")
 
         # Read libraries (macros, stdcells)
-        # TODO: Support mixed languages. Need to use -append option for each file type and -noelaborate
-        verilog_libs = self.technology.read_libs(
-                [hammer_tech.verilog_synth_filter],
+        # TODO: support VHDL + Liberty. For now, -sva = SystemVerilog w/ assertion support.
+        lib_v_files = self.technology.read_libs(
+                [hammer_tech.filters.verilog_synth_filter],
                 hammer_tech.HammerTechnologyUtils.to_plain_item)
-        verilog_libs.extend(self.technology.read_libs(
-                [hammer_tech.verilog_sim_filter],
+        lib_v_files.extend(self.technology.read_libs(
+                [hammer_tech.filters.verilog_sim_filter],
                 hammer_tech.HammerTechnologyUtils.to_plain_item))
-        verbose_append(f"read_library {' '.join(verilog_libs} -verilog -bboxsolver -both -verbose")
+        append(f"read_library {' '.join(lib_v_files)} -sva -bboxsolver -both")
 
         # Read designs
-        valid_exts = [".v", ".v.gz"]
+        valid_exts = [".v", ".v.gz", ".sv", ".sv.gz"]
         if not self.check_input_files(valid_exts) or not self.check_reference_files(valid_exts):
             return False
-        golden_verilog = list(map(lambda name: os.path.join(os.getcwd(), name), self.reference_files))
-        verbose_append(f"read_design {' '.join(golden_verilog)} -verilog -golden -verbose")
-        revised_verilog = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))
-        verbose_append(f"read_design {' '.join(revised_verilog)} -verilog -revised -verbose")
+        golden_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.reference_files))
+        append(f"read_design {' '.join(golden_files)} -sva -golden")
+        revised_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))
+        append(f"read_design {' '.join(revised_files)} -sva -revised")
+
+        # Set top module
+        append(f"set_root_module {self.top_module} -both")
 
         # Auto setup analysis optimizations
         if self.get_setting("formal.conformal.license") != "L":
-            verbose_append("set_analyze_option -auto")
+            append("set_analyze_option -auto")
 
         # Setup reports
-        verbose_append("report_design_data")
+        append("report_design_data")
 
         return True
 
     def compare_designs(self) -> bool:
-        """ Depending on license, performs flat comparison or invokes SmartLEC hierarchical """
-        verbose_append = self.verbose_append
+        """ Depending on license, performs flat or hierarchical comparison """
+        append = self.append
 
         if self.get_setting("formal.conformal.license") == "L":
-            verbose_append("report_black_box")
-            verbose_append("set_system_mode lec")
-            verbose_append("add_compare_point -all")
-            verbose_append("compare")
-            verbose_append("report_compare_data")
+            append("report_black_box")
+            append("set_system_mode lec")
+            append("add_compare_point -all")
+            append("compare")
+            append("report_compare_data")
         else:
-            verbose_append("set_hier_compare_selection -smart")
-            # TODO: Genus & DC-synthesized netlists can use extra info (implementation details/resource file)
-            verbose_append('write_hier_compare_do_file hier.do -compare_string "analyze_compare -verbose"')
-            verbose_append("go_hier_compare hier.do")
+            # TODO: need resource file for DC-mapped netlists
+            append('write_hier_compare_dofile hier.do -replace '\
+                   '-prepend_string "analyze_datapath -module; analyze_datapath"')
+            append("run_hier_compare hier.do")
+            append("set_system_mode lec")
 
-        verbose_append("report_statistics")
+        append("report_statistics")
 
         return True
 
@@ -217,9 +230,10 @@ class Conformal(HammerFormalTool, CadenceTool):
 
         # Script to open results checkpoint
         # TODO: start the mapping manager if error code required it with set_gui -mapping
-        with open(os.path.join(self.generate_scripts_dir, "open_checkpoint")) as f:
+        with open(os.path.join(self.generated_scripts_dir, "open_checkpoint"), "w") as f:
+            assert super().do_pre_steps(self.first_step)
             args = self.start_cmd
-            args.extend(["-gui", "-restart_checkpoint", self.restore_checkpoint])
+            args.extend(["-gui", "-restart_checkpoint", "latest"])
             f.write("#!/bin/bash")
             f.write(" ".join(args))
 
@@ -237,8 +251,13 @@ class Conformal(HammerFormalTool, CadenceTool):
             "-nogui",
             "-color",
             "-tclmode",
-            "dofile", dofile
+            "-dofile", dofile
         ])
+        if self.restart_checkpoint != "":
+            args.extend([
+                "-restart_checkpoint",
+                self.restart_checkpoint
+            ])
 
         # Temporarily disable colours/tag to make run output more readable.
         # TODO: think of a more elegant way to do this?
@@ -269,7 +288,7 @@ def conformal_global_settings(ht: HammerTool) -> bool:
 
     # Multithreading (max 16 allowed by tool)
     max_threads = max(ht.get_setting("vlsi.core.max_threads"), 16)
-    self.verbose_append(f"set_parallel_option -threads 1,{max_threads}")
+    self.append(f"set_parallel_option -threads 1,{max_threads}")
 
     return True
 
