@@ -27,6 +27,15 @@ class Conformal(HammerFormalTool, CadenceTool):
         return "formal.conformal"
 
     @property
+    def env_vars(self) -> Dict[str, str]:
+        v = dict(super().env_vars)
+        if self.check in ["constraint", "cdc"]:
+            v["CONFORMAL_BIN"] = self.get_setting("formal.conformal.conformal_ccd_bin")
+        else:
+            v["CONFORMAL_BIN"] = self.get_setting("formal.conformal.conformal_lec_bin")
+        return v
+
+    @property
     def start_cmd(self) -> List[str]:
         """ Generate required startup command based on the requested check and license level """
         lec_bin = self.get_setting("formal.conformal.conformal_lec_bin")
@@ -141,11 +150,7 @@ class Conformal(HammerFormalTool, CadenceTool):
             # Symlink the database to latest for open_checkpoint script later.
             self.append(f"ln -sfn {last} latest")
 
-        return self.run_conformal()
-
-#    def get_tool_hooks(self) -> List[HammerToolHookAction]:
-#        #return [self.make_persistent_hook(conformal_global_settings)]
-#        return []
+        return self.generate_open_checkpoint() and self.run_conformal()
 
     @property
     def steps(self) -> List[HammerToolStep]:
@@ -165,7 +170,7 @@ class Conformal(HammerFormalTool, CadenceTool):
         append("set_dofile_abort exit")
 
         # Multithreading (max 16 allowed by tool)
-        max_threads = max(self.get_setting("vlsi.core.max_threads"), 16)
+        max_threads = min(self.get_setting("vlsi.core.max_threads"), 16)
         append(f"set_parallel_option -threads 1,{max_threads}")
 
         # Read libraries (macros, stdcells)
@@ -211,32 +216,39 @@ class Conformal(HammerFormalTool, CadenceTool):
             append("report_compare_data")
         else:
             # TODO: need resource file for DC-mapped netlists
-            append('write_hier_compare_dofile hier.do -replace '\
+            append('write_hier_compare_dofile hier_compare.tcl -replace '\
                    '-prepend_string "analyze_datapath -module; analyze_datapath"')
-            append("run_hier_compare hier.do")
+            append("run_hier_compare hier_compare.tcl")
             append("set_system_mode lec")
 
         append("report_statistics")
 
         return True
 
-    @property
-    def generated_scripts_dir(self) -> str:
-        return os.path.join(self.run_dir, "generated-scripts")
-
-    def run_conformal(self) -> bool:
+    def generate_open_checkpoint(self) -> bool:
         # Make sure that generated-scripts exists.
-        os.makedirs(self.generated_scripts_dir, exist_ok=True)
+        generated_scripts_dir = os.path.join(self.run_dir, "generated-scripts")
+        os.makedirs(generated_scripts_dir, exist_ok=True)
 
         # Script to open results checkpoint
-        # TODO: start the mapping manager if error code required it with set_gui -mapping
-        with open(os.path.join(self.generated_scripts_dir, "open_checkpoint"), "w") as f:
+        self.create_enter_script()
+        open_checkpoint_tcl = os.path.join(generated_scripts_dir, "open_checkpoint.tcl")
+        with open(open_checkpoint_tcl, "w") as f:
+            f.write("set_gui -mapping")
+        open_checkpoint_script = os.path.join(generated_scripts_dir, "open_checkpoint")
+        with open(open_checkpoint_script, "w") as f:
             assert super().do_pre_steps(self.first_step)
             args = self.start_cmd
             args.extend(["-gui", "-restart_checkpoint", "latest"])
-            f.write("#!/bin/bash")
-            f.write(" ".join(args))
+            f.write("#!/bin/bash\n")
+            f.write(f"cd {self.run_dir}\n")
+            f.write("source enter\n")
+            f.write(f"$CONFORMAL_BIN -restart_checkpoint latest -dofile {open_checkpoint_tcl}")
+        os.chmod(open_checkpoint_script, 0o755)
 
+        return True
+
+    def run_conformal(self) -> bool:
         # Quit
         self.append("exit")
 
@@ -280,16 +292,5 @@ class Conformal(HammerFormalTool, CadenceTool):
         # TODO: check that formal run was successful
 
         return True
-
-def conformal_global_settings(ht: HammerTool) -> bool:
-    """Settings that need to be applied at every tool invocation"""
-    assert isinstance(ht, HammerFormalTool)
-    assert isinstance(ht, CadenceTool)
-
-    # Multithreading (max 16 allowed by tool)
-    max_threads = max(ht.get_setting("vlsi.core.max_threads"), 16)
-    self.append(f"set_parallel_option -threads 1,{max_threads}")
-
-    return True
 
 tool = Conformal
