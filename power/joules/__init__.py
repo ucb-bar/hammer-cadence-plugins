@@ -26,7 +26,6 @@ from tool import CadenceTool
 class Joules(HammerPowerTool, CadenceTool):
     @property
     def post_synth_sdc(self) -> Optional[str]:
-        # No post-synth SDC input for power...
         return None
 
     def tool_config_prefix(self) -> str:
@@ -50,21 +49,17 @@ class Joules(HammerPowerTool, CadenceTool):
         # libs, define RAMs, define corners
         verbose_append = self.verbose_append
 
-        # TODO integrate TT corner power
         corners = self.get_mmmc_corners()
-        setup = corners[0]
-        hold = corners[0]
-
-        for corner in corners:
-            if corner.type is MMMCCornerType.Setup:
-               setup = corner
-            if corner.type is MMMCCornerType.Hold:
-                hold = corner
-
-        setup_lib = self.get_timing_libs(setup)
-        hold_lib = self.get_timing_libs(hold)
-
-        verbose_append("read_libs {HOLD_LIB} {SETUP_LIB}".format(HOLD_LIB=hold_lib, SETUP_LIB=setup_lib))
+        if MMMCCornerType.Extra in list(map(lambda corner: corner.type, corners)):
+            for corner in corners:
+                if corner.type is MMMCCornerType.Extra:
+                    verbose_append("read_libs {EXTRA_LIB} -infer_memory_cells".format(EXTRA_LIB=self.get_timing_libs(corner)))
+                    break
+        else:
+            for corner in corners:
+                if corner.type is MMMCCornerType.Setup:
+                    verbose_append("read_libs {SETUP_LIBS} -infer_memory_cells".format(SETUP_LIB=self.get_timing_libs(corner)))
+                    break
 
         return True
 
@@ -78,9 +73,10 @@ class Joules(HammerPowerTool, CadenceTool):
 
 
         if self.level == FlowLevel.RTL:
-            input_files = self.get_setting("power.inputs.input_files")
+            #input_files = self.get_setting("power.inputs.input_files")
             # Read in the design files
-            verbose_append("read_hdl {}".format(" ".join(input_files)))
+            #verbose_append("read_hdl -sv {}".format(" ".join(input_files)))
+            verbose_append("read_hdl -sv {}".format(" ".join(self.input_files)))
 
         # Setup the power specification
         power_spec_arg = self.map_power_spec_name()
@@ -95,88 +91,120 @@ class Joules(HammerPowerTool, CadenceTool):
         if self.level == FlowLevel.RTL:
             # Elaborate the design
             verbose_append("elaborate {TOP_MODULE}".format(TOP_MODULE=top_module))
-
-            # Generate and read the SDCs
-            sdc_files = self.generate_sdc_files()  # type: List[str]
-            verbose_append("read_sdc {}".format(" ".join(sdc_files)))
-
-            verbose_append("power_map -root {} -effort low".format(top_module))
-
         elif self.level == FlowLevel.GateLevel:
-            #syn_db = self.get_setting("power.inputs.database")
             # Read in the synthesized netlist
             verbose_append("read_netlist {}".format(" ".join(self.input_files)))
 
             # Read in the post-synth SDCs
             verbose_append("read_sdc {}".format(self.sdc))
+        else:
+            self.logger.error("Unsupported FlowLevel")
+            return False
 
+        report_power_commands = []
 
-        stims = [] # type: List[str]
+        # Generate average power report for all waveforms
+        waveforms = self.waveforms
+        for waveform in waveforms:
+            verbose_append("read_stimulus -file {WAVE} -dut_instance {TB}/{DUT} -alias {WAVE_NAME} -append".format(WAVE=waveform, TB=tb_name, DUT=tb_dut, WAVE_NAME=os.path.basename(waveform)))
 
+        # Generate Specified and Custom Reports
         reports = self.get_power_report_configs()
-        custom_reports = self.get_setting("power.inputs.custom_reports")
 
-        # TODO: These times should be either auto calculated/read from the inputs or moved into the same structure as a tuple
-        start_times = self.get_setting("power.inputs.start_times")
-        end_times = self.get_setting("power.inputs.end_times")
+        for i, report in enumerate(reports):
+            waveform = os.path.basename(report.waveform_path)
 
-        # Reading stimulus
-        waveforms = self.get_setting("power.inputs.waveforms")
-        for i in range(len(waveforms)):
-            wave = waveforms[i]
-            wave_basename = os.path.basename(wave)
-            stims.append(wave_basename)
+            module_str = ""
+            if report.module:
+                module_str = "-module " + report.module
 
-            # general waveform report
-            if not start_times:
-                verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, NAME=wave_basename))
-            else:
-                stime_ns = TimeValue(start_times[i]).value_in_units("ns")
-                #etime_ns = TimeValue(end_times[i]).value_in_units("ns")
-                verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -start {STIME}ns -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, STIME=stime_ns, NAME=wave_basename))
+            levels_str = ""
+            if report.levels:
+                levels_str = "-levels " + str(report.levels)
 
-            #verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -alias {NAME} -append".format(VCD=wave, TB=tb_name, DUT=tb_dut, NAME=wave_basename))
+            stime_str = ""
+            if report.start_time:
+                stime_ns = report.start_time.value_in_units("ns")
+                stime_str += "-start " + stime_ns
 
-            # specified reports
-            report_count = 0
-            for report in reports:
-                if not start_times:
-                    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -cycles {COUNT} {SIGNAL} -alias {NAME}_{NUM} -append".format(VCD=wave, TB=tb_name,
-                        DUT=tb_dut, COUNT=report.num_toggles, SIGNAL=report.toggle_signal, NAME=wave_basename, NUM=str(report_count)))
+            etime_str = ""
+            if report.end_time:
+                etime_ns = report.end_time.value_in_units("ns")
+                etime_str += "-end " + etime_ns
+
+            toggle_signal_str = ""
+            if report.toggle_signal:
+                if report.num_toggles:
+                    toggle_signal_str = "-cycles {NUM} {SIGNAL}".format(NUM=str(report.num_toggles), SIGNAL=report.toggle_signal)
                 else:
-                    stime_ns = TimeValue(start_times[i]).value_in_units("ns")
-                    #etime_ns = TimeValue(end_times[i]).value_in_units("ns")
-                    verbose_append("read_stimulus {VCD} -dut_instance {TB}/{DUT} -format vcd -start {STIME}ns -cycles {COUNT} {SIGNAL} -alias {NAME}_{NUM} -append".format(VCD=wave, TB=tb_name,
-                        DUT=tb_dut, STIME=stime_ns, COUNT=report.num_toggles, SIGNAL=report.toggle_signal, NAME=wave_basename, NUM=str(report_count)))
+                    self.logger.error("Must specify the number of toggles if the toggle signal is specified.")
+                    return False
 
-                report_count += 1
+            frame_count_str = ""
+            if report.frame_count:
+                frame_count_str = "-frame_count " + str(report.frame_count)
+
+            stim_alias = waveform + "_" + str(i)
+            report_name = ""
+            if report.report_name:
+                report_name = report.report_name
+            else:
+                report_name = stim_alias + ".report"
+
+            verbose_append("read_stimulus -file {WAVE_PATH} -dut_instance {TB}/{DUT} {START} {END} {TOGGLE_SIGNAL} -alias {STIM_ALIAS} -append".format(
+                WAVE_PATH=report.waveform_path,
+                TB=tb_name,
+                DUT=tb_dut,
+                START=stime_str,
+                END=etime_str,
+                TOGGLE_SIGNAL=toggle_signal_str,
+                STIM_ALIAS=stim_alias
+                ))
+
+            # Generate the report commands here
+            # Then append them later
+            #report_power_commands.append("set num_frames [get_sdb_frames -stims {STIM_ALIAS} -count]".format(STIM_ALIAS=stim_alias))
+            #report_power -frames [get_sdb_frames joules.vcd_0] -collate none -cols total -by_hierarchy  -levels 1 -indent_inst -unit mW -out full_test_report.report -append
+            #report_power_commands.append("report_power -stims {STIM_ALIAS} -frames {{/{STIM_ALIAS}/frame#[1:$num_frames]}}  -cols total -by_hierarchy {MODULE} {LEVELS} -indent_inst -unit mW -out {REPORT_NAME}".format(
+            report_power_commands.append("report_power -frames [get_sdb_frames {STIM_ALIAS}] -collate none -cols total -by_hierarchy {MODULE} {LEVELS} -indent_inst -unit mW -out {REPORT_NAME}".format(
+                STIM_ALIAS=stim_alias,
+                REPORT_NAME=report_name,
+                MODULE=module_str,
+                LEVELS=levels_str))
 
 
         saifs = self.get_setting("power.inputs.saifs")
+        saif_report_commands = []
         for saif in saifs:
             saif_basename = os.path.basename(saif)
-            stims.append(saif_basename)
             verbose_append("read_stimulus {SAIF} -dut_instance {TB}/{DUT} -format saif -alias {NAME} -append".format(SAIF=saif, TB=tb_name, DUT=tb_dut, NAME=saif_basename))
+            saif_report_commands.append("report_power -stims {SAIF} -indent_inst -unit mW -out {SAIF}.report".format(SAIF=saif_basename))
+
+
+        if self.level == FlowLevel.RTL:
+            # Generate and read the SDCs
+            sdc_files = self.generate_sdc_files()  # type: List[str]
+            verbose_append("read_sdc {}".format(" ".join(sdc_files)))
+            verbose_append("set_db auto_super_thread 1")
+            verbose_append("syn_power -effort low")
 
         verbose_append("compute_power -mode time_based")
 
-        for stim in stims:
-            # TODO: got rid of -append so the report is overwritten; check functionality
-            verbose_append("report_power -stims {STIM} -by_hierarchy -levels 3 -indent_inst -unit mW -out {STIM}.report".format(STIM=stim))
+        verbose_append("report_power -stims {WAVEFORMS} -indent_inst -unit mW -append -out waveforms.report".format(WAVEFORMS=" ".join(list(map(os.path.basename, waveforms)))))
 
-            for i in range(len(reports)):
-                rpt = reports[i]
-                levels = rpt.levels
-                # TODO need to add on TB/DUT/module to module name?
-                rpt_module = rpt.module
-                verbose_append("set num_frames [get_sdb_frames -stims {}_{} -count]".format(stim, i))
-                self.append("""
-for {{set i 0}} {{$i < $num_frames}} {{incr i}} {{
-    report_power -by_hierarchy -levels {LVLS} -cols total -indent_inst -frames /{STIM}_{NUM}/frame#$i -unit mW -out {STIM}_{NUM}.report -append
-}}
-                """.format(LVLS=levels,STIM=stim, NUM=str(i)))
+        for cmd in report_power_commands:
+            verbose_append(cmd)
+
+        for cmd in saif_report_commands:
+            verbose_append(cmd)
+
+        custom_reports = self.get_setting("power.inputs.custom_reports")
+        for custom_report in custom_reports:
+            verbose_append(custom_report)
 
         return True
+
+
 
     def run_joules(self) -> bool:
         verbose_append = self.verbose_append

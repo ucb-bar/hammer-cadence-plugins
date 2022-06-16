@@ -81,11 +81,10 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
 
     def generate_sdc_files(self) -> List[str]:
         """
-        Helper function to generate the clock and pin constraint SDC files.
-
-        :return: List of the clock constraints and pin constraint SDC fragments
+        Generate SDC files for use in mmmc script.
         """
-        sdc_files = []  # type: List[str]
+
+        sdc_files = [] # type: List[str]
 
         # Generate constraints
         clock_constraints_fragment = os.path.join(self.run_dir, "clock_constraints_fragment.sdc")
@@ -99,7 +98,13 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
             f.write(self.sdc_pin_constraints)
         sdc_files.append(pin_constraints_fragment)
 
+        # Add the post-synthesis SDC, if present.
+        post_synth_sdc = self.post_synth_sdc
+        if post_synth_sdc is not None:
+            sdc_files.append(post_synth_sdc)
+
         return sdc_files
+
 
     def generate_mmmc_script(self) -> str:
         """
@@ -115,12 +120,27 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
 
         # Create an Innovus constraint mode.
         constraint_mode = "my_constraint_mode"
-        sdc_files = self.generate_sdc_files()  # type: List[str]
 
-        # Add the post-synthesis SDC, if present.
-        post_synth_sdc = self.post_synth_sdc
-        if post_synth_sdc is not None:
-            sdc_files.append(post_synth_sdc)
+        sdc_files = self.generate_sdc_files()
+
+        #sdc_files = []  # type: List[str]
+
+        ## Generate constraints
+        #clock_constraints_fragment = os.path.join(self.run_dir, "clock_constraints_fragment.sdc")
+        #with open(clock_constraints_fragment, "w") as f:
+        #    f.write(self.sdc_clock_constraints)
+        #sdc_files.append(clock_constraints_fragment)
+
+        ## Generate port constraints.
+        #pin_constraints_fragment = os.path.join(self.run_dir, "pin_constraints_fragment.sdc")
+        #with open(pin_constraints_fragment, "w") as f:
+        #    f.write(self.sdc_pin_constraints)
+        #sdc_files.append(pin_constraints_fragment)
+
+        ## Add the post-synthesis SDC, if present.
+        #post_synth_sdc = self.post_synth_sdc
+        #if post_synth_sdc is not None:
+        #    sdc_files.append(post_synth_sdc)
 
         # TODO: add floorplanning SDC
         if len(sdc_files) > 0:
@@ -281,7 +301,6 @@ if {{ {get_db_str} ne "" }} {{
         """
 
         power_spec_type = str(self.get_setting("vlsi.inputs.power_spec_type"))  # type: str
-
         power_spec_contents = ""  # type: str
         power_spec_mode = str(self.get_setting("vlsi.inputs.power_spec_mode"))  # type: str
         if power_spec_mode == "empty":
