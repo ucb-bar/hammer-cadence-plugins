@@ -98,6 +98,24 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
             f.write(self.sdc_pin_constraints)
         sdc_files.append(pin_constraints_fragment)
 
+        return sdc_files
+
+    def generate_mmmc_script(self) -> str:
+        """
+        Output for the mmmc.tcl script.
+        Innovus (init_design) requires that the timing script be placed in a separate file.
+
+        :return: Contents of the mmmc script.
+        """
+        mmmc_output = []  # type: List[str]
+
+        def append_mmmc(cmd: str) -> None:
+            self.verbose_tcl_append(cmd, mmmc_output)
+
+        # Create an Innovus constraint mode.
+        constraint_mode = "my_constraint_mode"
+        sdc_files = self.generate_sdc_files()  # type: List[str]
+
         # Add the post-synthesis SDC, if present.
         post_synth_sdc = self.post_synth_sdc
         if post_synth_sdc is not None:
