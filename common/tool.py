@@ -83,7 +83,6 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
         """
         Generate SDC files for use in mmmc script.
         """
-
         sdc_files = [] # type: List[str]
 
         # Generate constraints
@@ -114,51 +113,13 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
 
         # Create an Innovus constraint mode.
         constraint_mode = "my_constraint_mode"
-        sdc_files = self.generate_sdc_files()  # type: List[str]
+
+        sdc_files = self.generate_sdc_files()
 
         # Add the post-synthesis SDC, if present.
         post_synth_sdc = self.post_synth_sdc
         if post_synth_sdc is not None:
             sdc_files.append(post_synth_sdc)
-
-        return sdc_files
-
-
-    def generate_mmmc_script(self) -> str:
-        """
-        Output for the mmmc.tcl script.
-        Innovus (init_design) requires that the timing script be placed in a separate file.
-
-        :return: Contents of the mmmc script.
-        """
-        mmmc_output = []  # type: List[str]
-
-        def append_mmmc(cmd: str) -> None:
-            self.verbose_tcl_append(cmd, mmmc_output)
-
-        # Create an Innovus constraint mode.
-        constraint_mode = "my_constraint_mode"
-
-        sdc_files = self.generate_sdc_files()
-
-        #sdc_files = []  # type: List[str]
-
-        ## Generate constraints
-        #clock_constraints_fragment = os.path.join(self.run_dir, "clock_constraints_fragment.sdc")
-        #with open(clock_constraints_fragment, "w") as f:
-        #    f.write(self.sdc_clock_constraints)
-        #sdc_files.append(clock_constraints_fragment)
-
-        ## Generate port constraints.
-        #pin_constraints_fragment = os.path.join(self.run_dir, "pin_constraints_fragment.sdc")
-        #with open(pin_constraints_fragment, "w") as f:
-        #    f.write(self.sdc_pin_constraints)
-        #sdc_files.append(pin_constraints_fragment)
-
-        ## Add the post-synthesis SDC, if present.
-        #post_synth_sdc = self.post_synth_sdc
-        #if post_synth_sdc is not None:
-        #    sdc_files.append(post_synth_sdc)
 
         # TODO: add floorplanning SDC
         if len(sdc_files) > 0:
@@ -310,7 +271,7 @@ if {{ {get_db_str} ne "" }} {{
         else:
             self.logger.error(
                 "Invalid power specification type '{tpe}'; only 'cpf' or 'upf' supported".format(tpe=power_spec_type))
-            return []
+            return ""
         return power_spec_arg
 
     def create_power_spec(self) -> str:
@@ -322,7 +283,7 @@ if {{ {get_db_str} ne "" }} {{
         power_spec_contents = ""  # type: str
         power_spec_mode = str(self.get_setting("vlsi.inputs.power_spec_mode"))  # type: str
         if power_spec_mode == "empty":
-            return []
+            return ""
         elif power_spec_mode == "auto":
             if power_spec_type == "cpf":
                 power_spec_contents = self.cpf_power_specification
@@ -332,7 +293,7 @@ if {{ {get_db_str} ne "" }} {{
             power_spec_contents = str(self.get_setting("vlsi.inputs.power_spec_contents"))
         else:
             self.logger.error("Invalid power specification mode '{mode}'; using 'empty'.".format(mode=power_spec_mode))
-            return []
+            return ""
 
         # Write the power spec contents to file and include it
         power_spec_file = os.path.join(self.run_dir, "power_spec.{tpe}".format(tpe=power_spec_type))

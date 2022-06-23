@@ -145,6 +145,7 @@ class Voltus(HammerPowerTool, CadenceTool):
     @property
     def steps(self) -> List[HammerToolStep]:
         return self.make_steps_from_methods([
+            self.check_level,
             self.init_technology,
             self.init_design,
             self.static_power,
@@ -153,6 +154,14 @@ class Voltus(HammerPowerTool, CadenceTool):
             self.active_rail,
             self.run_voltus
         ])
+
+    def check_level(self) -> bool:
+        if self.level == FlowLevel.PAR:
+            return True
+        else:
+            self.logger.error("The FlowLevel is invalid. The Voltus plugin only supports post-par analysis. Check your power tool setting and flow step.")
+            return False
+
 
     def init_technology(self) -> bool:
         corners = self.get_mmmc_corners()
@@ -415,6 +424,11 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_power_pads -net {VDD} -format defpin".format(VDD=vdd_net))
         verbose_append("set_power_pads -net {VSS} -format defpin".format(VSS=vss_net))
 
+        # Check that SPEFs exist
+        if len(self.spefs) == 0:
+            self.log.error("No spef files specified for power analysis")
+            return False
+
         corners = self.get_mmmc_corners()
         if corners:
             setup_view_names = [] # type: List[str]
@@ -530,10 +544,6 @@ class Voltus(HammerPowerTool, CadenceTool):
         tb_dut = self.get_setting("power.inputs.tb_dut")
         tb_scope = "{}/{}".format(tb_name, tb_dut)
 
-        # TODO: These times should be either auto calculated/read from the inputs or moved into the same structure as a tuple
-        start_times = self.get_setting("power.inputs.start_times")
-        end_times = self.get_setting("power.inputs.end_times")
-
         # Active Vectorbased Power Analysis
         verbose_append("set_db power_method dynamic_vectorbased")
         waveform_format_map = {".vcd": "vcd",
@@ -541,14 +551,12 @@ class Voltus(HammerPowerTool, CadenceTool):
                                ".fsdb": "fsdb",
                                ".shm": "shm",
                                ".trn": "shm"}
-        for waveform_path, waveform_stime, waveform_etime in zip(self.waveforms, start_times, end_times):
-            stime_ns = TimeValue(waveform_stime).value_in_units("ns")
-            etime_ns = TimeValue(waveform_etime).value_in_units("ns")
+        for waveform_path in self.waveforms:
             # Set format intelligently based on file extension. Strip .gz if present.
             waveform_ext = os.path.splitext(waveform_path.rstrip(".gz"))[1].lower()
             if waveform_format_map.get(waveform_ext) is None:
                 self.logger.error("Only VCD/VPD, FSDB, and SHM waveform formats supported.")
-            verbose_append("read_activity_file -reset -format {FORMAT} {WAVEFORM_PATH} -start {stime}ns -end {etime}ns -scope {TESTBENCH}".format(FORMAT=waveform_format_map.get(waveform_ext), WAVEFORM_PATH=os.path.join(os.getcwd(), waveform_path), TESTBENCH=tb_scope, stime=stime_ns, etime=etime_ns))
+            verbose_append("read_activity_file -reset -format {FORMAT} {WAVEFORM_PATH} -scope {TESTBENCH}".format(FORMAT=waveform_format_map.get(waveform_ext), WAVEFORM_PATH=os.path.join(os.getcwd(), waveform_path), TESTBENCH=tb_scope))
             waveform_file = os.path.basename(waveform_path)
             # Report based on MMMC mode
             if not corners:
