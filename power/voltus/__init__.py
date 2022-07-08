@@ -15,7 +15,7 @@ import json
 
 from hammer_config import HammerJSONEncoder
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid, in_place_unique
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue, VoltageValue
+from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, FlowLevel, TimeValue, VoltageValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from specialcells import CellType
@@ -426,7 +426,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Check that SPEFs exist
         if len(self.spefs) == 0:
-            self.log.error("No spef files specified for power analysis")
+            self.logger.error("No spef files specified for power analysis")
             return False
 
         corners = self.get_mmmc_corners()

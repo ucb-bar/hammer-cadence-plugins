@@ -63,21 +63,24 @@ class Joules(HammerPowerTool, CadenceTool):
         verbose_append = self.verbose_append
 
         corners = self.get_mmmc_corners()
-        if MMMCCornerType.Setup in list(map(lambda corner: corner.type, corners)):
-            for corner in corners:
-                if corner.type is MMMCCornerType.Setup:
-                    verbose_append("read_libs {SETUP_LIBS} -domain setup -infer_memory_cells".format(SETUP_LIBS=self.get_timing_libs(corner)))
-                    break
-        if MMMCCornerType.Hold in list(map(lambda corner: corner.type, corners)):
-            for corner in corners:
-                if corner.type is MMMCCornerType.Hold:
-                    verbose_append("read_libs {HOLD_LIBS} -domain hold -infer_memory_cells".format(HOLD_LIBS=self.get_timing_libs(corner)))
-                    break
         if MMMCCornerType.Extra in list(map(lambda corner: corner.type, corners)):
             for corner in corners:
                 if corner.type is MMMCCornerType.Extra:
                     verbose_append("read_libs {EXTRA_LIBS} -domain extra -infer_memory_cells".format(EXTRA_LIBS=self.get_timing_libs(corner)))
                     break
+        elif MMMCCornerType.Setup in list(map(lambda corner: corner.type, corners)):
+            for corner in corners:
+                if corner.type is MMMCCornerType.Setup:
+                    verbose_append("read_libs {SETUP_LIBS} -domain setup -infer_memory_cells".format(SETUP_LIBS=self.get_timing_libs(corner)))
+                    break
+        elif MMMCCornerType.Hold in list(map(lambda corner: corner.type, corners)):
+            for corner in corners:
+                if corner.type is MMMCCornerType.Hold:
+                    verbose_append("read_libs {HOLD_LIBS} -domain hold -infer_memory_cells".format(HOLD_LIBS=self.get_timing_libs(corner)))
+                    break
+        else:
+            self.logger.error("No corners found")
+            return False
         return True
 
     def init_design(self) -> bool:
@@ -127,8 +130,8 @@ class Joules(HammerPowerTool, CadenceTool):
 
         # Generate average power report for all waveforms
         waveforms = self.waveforms
-        for waveform in waveforms:
-            verbose_append("read_stimulus -file {WAVE} -dut_instance {TB}/{DUT} -alias {WAVE_NAME} -append".format(WAVE=waveform, TB=tb_name, DUT=tb_dut, WAVE_NAME=os.path.basename(waveform)))
+        for i, waveform in enumerate(waveforms):
+            verbose_append("read_stimulus -file {WAVE} -dut_instance {TB}/{DUT} -alias {WAVE_NAME}_{NUM} -append".format(WAVE=waveform, TB=tb_name, DUT=tb_dut, WAVE_NAME=os.path.basename(waveform), NUM=i))
 
         # Generate Specified and Custom Reports
         reports = self.get_power_report_configs()
@@ -155,7 +158,7 @@ class Joules(HammerPowerTool, CadenceTool):
                 read_stim_cmd += " -frame_count {FRAME_COUNT}".format(FRAME_COUNT=report.frame_count)
 
 
-            read_stim_cmd += " -alias {WAVE}_{NUM}".format(WAVE=waveform, NUM=i)
+            read_stim_cmd += " -alias report_{WAVE}_{NUM}".format(WAVE=waveform, NUM=i)
 
             verbose_append(read_stim_cmd)
 
@@ -183,7 +186,7 @@ class Joules(HammerPowerTool, CadenceTool):
     def compute_power(self) -> bool:
         verbose_append = self.verbose_append
 
-        verbose_append("create_clock_tree")
+        #verbose_append("create_clock_tree")
         verbose_append("compute_power -mode time_based")
 
         return True
@@ -197,7 +200,8 @@ class Joules(HammerPowerTool, CadenceTool):
         # Replace . to / formatting in case argument passed from sim tool
         tb_dut = self.tb_dut.replace(".", "/")
 
-        verbose_append("report_power -stims {WAVEFORMS} -indent_inst -unit mW -header -append -out waveforms.report".format(WAVEFORMS=" ".join(list(map(os.path.basename, self.waveforms)))))
+        for i, wave in enumerate(self.waveforms):
+            verbose_append("report_power -stims {WAVE}_{NUM} -indent_inst -unit mW -append -out waveforms.report".format(WAVE=os.path.basename(wave), NUM=i))
 
         reports = self.get_power_report_configs()
 
@@ -212,13 +216,13 @@ class Joules(HammerPowerTool, CadenceTool):
             if report.levels:
                 levels_str = " -levels {LEVELS}".format(LEVELS=report.levels)
 
-            stim_alias = "{WAVE}_{NUM}".format(WAVE=waveform, NUM=i)
+            stim_alias = "report_{WAVE}_{NUM}".format(WAVE=waveform, NUM=i)
             if report.report_name:
                 report_name = report.report_name
             else:
                 report_name = stim_alias + ".report"
 
-            verbose_append("report_power -frames [get_sdb_frames {STIM_ALIAS}] -collate none -cols total -by_hierarchy{MODULE}{LEVELS} -indent_inst -header -unit mW -out {REPORT_NAME}".format(
+            verbose_append("report_power -frames [get_sdb_frames {STIM_ALIAS}] -collate none -cols total -by_hierarchy{MODULE}{LEVELS} -indent_inst -unit mW -out {REPORT_NAME}".format(
                 STIM_ALIAS=stim_alias,
                 MODULE=module_str,
                 LEVELS=levels_str,
