@@ -191,7 +191,7 @@ class Tempus(HammerTimingTool, CadenceTool):
         verbose_append("set_db delaycal_equivalent_waveform_model propagation")
 
         # Enable signal integrity delay and glitch analysis
-        if self.get_setting("tempus.inputs.si_glitch"):
+        if self.get_setting("timing.tempus.si_glitch"):
             verbose_append("set_db si_num_iteration 3")
             verbose_append("set_db si_delay_enable_report true")
             verbose_append("set_db si_delay_separate_on_data true")
@@ -216,7 +216,7 @@ class Tempus(HammerTimingTool, CadenceTool):
         verbose_append(f"report_timing -retime path_slew_propagation -max_paths {self.max_paths} > timing.rpt")
         verbose_append(f"report_timing -unconstrained -debug unconstrained -max_paths {self.max_paths} > unconstrained.rpt")
 
-        if self.get_setting("tempus.inputs.si_glitch"):
+        if self.get_setting("timing.tempus.si_glitch"):
             # SI max/min delay
             verbose_append("report_noise -delay max -out_file max_si_delay")
             verbose_append("report_noise -delay min -out_file min_si_delay")

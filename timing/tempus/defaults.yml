@@ -10,7 +10,6 @@ timing.tempus:
   # Used to locate the binary - e.g. the '211_ISR3' in ${cadence.cadence_home}/SSV/SSV211_ISR3/bin/tempus
   version: "211_ISR3"
 
-tempus.inputs:
   # Enable signal integrity delay and glitch analysis
   # Note: your tech libs should have noise models!
   # type: bool
