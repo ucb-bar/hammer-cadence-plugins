@@ -167,8 +167,6 @@ class Tempus(HammerTimingTool, CadenceTool):
                     verbose_append("read_spef {spef} -rc_corner {corner}".format(spef=os.path.join(os.getcwd(), spef), corner=rc_corner))
 
             else:
-                # TODO: remove hardcoded my_view string
-                analysis_view_name = "my_view"
                 verbose_append("read_spef " + os.path.join(os.getcwd(), self.spefs[0]))
 
         # Read delay data (optional in Tempus)
