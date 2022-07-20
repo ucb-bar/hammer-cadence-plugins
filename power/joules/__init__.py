@@ -61,6 +61,7 @@ class Joules(HammerPowerTool, CadenceTool):
     def init_technology(self) -> bool:
         # libs, define RAMs, define corners
         verbose_append = self.verbose_append
+        verbose_append("set_multi_cpu_usage -local_cpu {}".format(ht.get_setting("vlsi.core.max_threads")))
 
         corners = self.get_mmmc_corners()
         if MMMCCornerType.Extra in list(map(lambda corner: corner.type, corners)):
@@ -177,8 +178,7 @@ class Joules(HammerPowerTool, CadenceTool):
             # Generate and read the SDCs
             sdc_files = self.generate_sdc_files()  # type: List[str]
             verbose_append("read_sdc {}".format(" ".join(sdc_files)))
-            verbose_append("set_db auto_super_thread 1")
-            verbose_append("syn_power -effort low")
+            verbose_append("syn_power -effort medium")
 
         return True
 
@@ -186,7 +186,6 @@ class Joules(HammerPowerTool, CadenceTool):
     def compute_power(self) -> bool:
         verbose_append = self.verbose_append
 
-        #verbose_append("create_clock_tree")
         verbose_append("compute_power -mode time_based")
 
         return True
