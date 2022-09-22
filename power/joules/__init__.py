@@ -61,7 +61,7 @@ class Joules(HammerPowerTool, CadenceTool):
     def init_technology(self) -> bool:
         # libs, define RAMs, define corners
         verbose_append = self.verbose_append
-        verbose_append("set_multi_cpu_usage -local_cpu {}".format(ht.get_setting("vlsi.core.max_threads")))
+        verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
         corners = self.get_mmmc_corners()
         if MMMCCornerType.Extra in list(map(lambda corner: corner.type, corners)):
@@ -106,7 +106,7 @@ class Joules(HammerPowerTool, CadenceTool):
         verbose_append("read_power_intent -{tpe} {spec} -module {TOP_MODULE}".format(tpe=power_spec_arg, spec=power_spec_file, TOP_MODULE=top_module))
 
         # Set options pre-elaboration
-        verbose_append("set_db leakage_power_effort low")
+        verbose_append("set_db leakage_power_effort medium")
         verbose_append("set_db lp_insert_clock_gating true")
 
         if self.level == FlowLevel.RTL:
@@ -231,10 +231,6 @@ class Joules(HammerPowerTool, CadenceTool):
         for saif in saifs:
             saif_basename = os.path.basename(saif)
             verbose_append("report_power -stims {SAIF} -indent_inst -unit mW -out {SAIF}.report".format(SAIF=saif_basename))
-
-        custom_reports = self.get_setting("power.inputs.custom_reports")
-        for custom_report in custom_reports:
-            verbose_append(custom_report)
 
         return True
 
