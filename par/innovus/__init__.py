@@ -582,6 +582,12 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         """Route the design."""
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             self.verbose_append("flatten_ilm")
+
+        # Allow express design effort to complete running.
+        # By default, route_design will abort in express mode with
+        # "WARNING (NRIG-142) Express flow by default will not run routing".
+        self.verbose_append("set_db design_express_route true")
+
         self.verbose_append("route_design")
         return True
 
