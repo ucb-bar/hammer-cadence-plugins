@@ -15,7 +15,7 @@ import json
 
 from hammer_config import HammerJSONEncoder
 from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid, in_place_unique
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue, VoltageValue
+from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, FlowLevel, TimeValue, VoltageValue
 from hammer_logging import HammerVLSILogging
 import hammer_tech
 from specialcells import CellType
@@ -145,6 +145,7 @@ class Voltus(HammerPowerTool, CadenceTool):
     @property
     def steps(self) -> List[HammerToolStep]:
         return self.make_steps_from_methods([
+            self.check_level,
             self.init_technology,
             self.init_design,
             self.static_power,
@@ -153,6 +154,14 @@ class Voltus(HammerPowerTool, CadenceTool):
             self.active_rail,
             self.run_voltus
         ])
+
+    def check_level(self) -> bool:
+        if self.level == FlowLevel.PAR:
+            return True
+        else:
+            self.logger.error("The FlowLevel is invalid. The Voltus plugin only supports post-par analysis. Check your power tool setting and flow step.")
+            return False
+
 
     def init_technology(self) -> bool:
         corners = self.get_mmmc_corners()
@@ -399,7 +408,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         verbose_append("set_db design_process_node {}".format(self.get_setting("vlsi.core.node")))
         verbose_append("set_multi_cpu_usage -local_cpu {}".format(self.get_setting("vlsi.core.max_threads")))
 
-        innovus_db = os.path.join(os.getcwd(), self.par_database)
+        innovus_db = os.path.join(os.getcwd(), self.flow_database)
         if innovus_db is None or not os.path.isdir(innovus_db):
             raise ValueError("Innovus database %s not found" % (innovus_db))
 
@@ -414,6 +423,11 @@ class Voltus(HammerPowerTool, CadenceTool):
             vss_net = gnd_net.name
         verbose_append("set_power_pads -net {VDD} -format defpin".format(VDD=vdd_net))
         verbose_append("set_power_pads -net {VSS} -format defpin".format(VSS=vss_net))
+
+        # Check that SPEFs exist
+        if len(self.spefs) == 0:
+            self.logger.error("No spef files specified for power analysis")
+            return False
 
         corners = self.get_mmmc_corners()
         if corners:
