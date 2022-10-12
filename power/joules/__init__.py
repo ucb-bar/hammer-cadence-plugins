@@ -88,7 +88,6 @@ class Joules(HammerPowerTool, CadenceTool):
         verbose_append = self.verbose_append
 
         top_module = self.get_setting("power.inputs.top_module")
-        tb_name = self.tb_name
         # Replace . to / formatting in case argument passed from sim tool
         tb_dut = self.tb_dut.replace(".", "/")
 
@@ -125,14 +124,13 @@ class Joules(HammerPowerTool, CadenceTool):
         verbose_append = self.verbose_append
 
         top_module = self.get_setting("power.inputs.top_module")
-        tb_name = self.tb_name
         # Replace . to / formatting in case argument passed from sim tool
         tb_dut = self.tb_dut.replace(".", "/")
 
         # Generate average power report for all waveforms
         waveforms = self.waveforms
         for i, waveform in enumerate(waveforms):
-            verbose_append("read_stimulus -file {WAVE} -dut_instance {TB}/{DUT} -alias {WAVE_NAME}_{NUM} -append".format(WAVE=waveform, TB=tb_name, DUT=tb_dut, WAVE_NAME=os.path.basename(waveform), NUM=i))
+            verbose_append("read_stimulus -file {WAVE} -dut_instance {DUT} -alias {WAVE_NAME}_{NUM} -append".format(WAVE=waveform, DUT=tb_dut, WAVE_NAME=os.path.basename(waveform), NUM=i))
 
         # Generate Specified and Custom Reports
         reports = self.get_power_report_configs()
@@ -140,7 +138,7 @@ class Joules(HammerPowerTool, CadenceTool):
         for i, report in enumerate(reports):
             waveform = os.path.basename(report.waveform_path)
 
-            read_stim_cmd = "read_stimulus -file {WAVE_PATH} -dut_instance {TB}/{DUT} -append".format(WAVE_PATH=report.waveform_path, TB=tb_name, DUT=tb_dut)
+            read_stim_cmd = "read_stimulus -file {WAVE_PATH} -dut_instance {DUT} -append".format(WAVE_PATH=report.waveform_path, DUT=tb_dut)
 
             if report.start_time:
                 read_stim_cmd += " -start {STIME}".format(STIME=report.start_time.value_in_units("ns"))
@@ -166,7 +164,7 @@ class Joules(HammerPowerTool, CadenceTool):
         saifs = self.get_setting("power.inputs.saifs")
         for saif in saifs:
             saif_basename = os.path.basename(saif)
-            verbose_append("read_stimulus {SAIF} -dut_instance {TB}/{DUT} -format saif -alias {NAME} -append".format(SAIF=saif, TB=tb_name, DUT=tb_dut, NAME=saif_basename))
+            verbose_append("read_stimulus {SAIF} -dut_instance {DUT} -format saif -alias {NAME} -append".format(SAIF=saif, DUT=tb_dut, NAME=saif_basename))
 
         return True
 
@@ -195,12 +193,15 @@ class Joules(HammerPowerTool, CadenceTool):
         verbose_append = self.verbose_append
 
         top_module = self.get_setting("power.inputs.top_module")
-        tb_name = self.tb_name
         # Replace . to / formatting in case argument passed from sim tool
         tb_dut = self.tb_dut.replace(".", "/")
+        waveforms_report_file = os.path.join(self.run_dir, "waveforms.report")
+        open(waveforms_report_file, 'w').close()  # clear file contents
 
         for i, wave in enumerate(self.waveforms):
-            verbose_append("report_power -stims {WAVE}_{NUM} -indent_inst -unit mW -append -out waveforms.report".format(WAVE=os.path.basename(wave), NUM=i))
+            verbose_append("report_power -stims {WAVE}_{NUM} -indent_inst -unit mW -append -out {FILE}".format(WAVE=os.path.basename(wave), NUM=i, FILE=waveforms_report_file))
+            # verbose_append("dump_power_profile -stims {WAVE}_{NUM} -unit mW -format fsdb -out waveforms.profile.{WAVE}_{NUM}".format(WAVE=os.path.basename(wave), NUM=i))
+            # verbose_append("plot_power_profile -stims {WAVE}_{NUM} -unit mW -format png  -out waveforms.profile.{WAVE}_{NUM}".format(WAVE=os.path.basename(wave), NUM=i))
 
         reports = self.get_power_report_configs()
 
