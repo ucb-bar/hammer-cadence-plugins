@@ -986,14 +986,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         y1=constraint.y,
                         y2=constraint.y + constraint.height
                     ))
-                elif constraint.type == PlacementConstraintType.Overlap:
-                    output.append("place_inst {inst} {x} {y} {orientation}{fixed}".format(
-                        inst=new_path,
-                        x=constraint.x,
-                        y=constraint.y,
-                        orientation=orientation,
-                        fixed=" -fixed" if constraint.create_physical else ""
-                    ))
                 elif constraint.type in [PlacementConstraintType.HardMacro, PlacementConstraintType.Hierarchical]:
                     output.append("place_inst {inst} {x} {y} {orientation}{fixed}".format(
                         inst=new_path,
