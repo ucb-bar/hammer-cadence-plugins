@@ -200,8 +200,6 @@ class Joules(HammerPowerTool, CadenceTool):
 
         for i, wave in enumerate(self.waveforms):
             verbose_append("report_power -stims {WAVE}_{NUM} -indent_inst -unit mW -append -out {FILE}".format(WAVE=os.path.basename(wave), NUM=i, FILE=waveforms_report_file))
-            # verbose_append("dump_power_profile -stims {WAVE}_{NUM} -unit mW -format fsdb -out waveforms.profile.{WAVE}_{NUM}".format(WAVE=os.path.basename(wave), NUM=i))
-            # verbose_append("plot_power_profile -stims {WAVE}_{NUM} -unit mW -format png  -out waveforms.profile.{WAVE}_{NUM}".format(WAVE=os.path.basename(wave), NUM=i))
 
         reports = self.get_power_report_configs()
 
@@ -227,6 +225,8 @@ class Joules(HammerPowerTool, CadenceTool):
                 MODULE=module_str,
                 LEVELS=levels_str,
                 REPORT_NAME=report_name))
+            # verbose_append("dump_power_profile -stims {STIM_ALIAS} -unit mW -format fsdb -out waveforms.profile.{STIM_ALIAS}.fsdb".format(STIM_ALIAS=stim_alias))
+            # verbose_append("plot_power_profile -stims {STIM_ALIAS} -unit mW -format png  -out waveforms.profile.{STIM_ALIAS}.png".format(STIM_ALIAS=stim_alias))
 
         saifs = self.get_setting("power.inputs.saifs")
         for saif in saifs:
