@@ -341,8 +341,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             if fp_width == 0 or fp_height == 0:
                 raise ValueError("Floorplan does not specify a TopLevel constraint or it has no dimensions")
             # Center bump array in the middle of floorplan
-            bump_offset_x = (Decimal(str(fp_width)) - bump_array_width) / 2 + bumps.man_x_offset
-            bump_offset_y = (Decimal(str(fp_height)) - bump_array_height) / 2 + bumps.man_y_offset
+            bump_offset_x = (Decimal(str(fp_width)) - bump_array_width) / 2 + bumps.global_x_offset
+            bump_offset_y = (Decimal(str(fp_height)) - bump_array_height) / 2 + bumps.global_y_offset
             power_ground_nets = list(map(lambda x: x.name, self.get_independent_power_nets() + self.get_independent_ground_nets()))
             # TODO: Fix this once the stackup supports vias ucb-bar/hammer#354
             block_layer = self.get_setting("vlsi.technology.bump_block_cut_layer")  # type: str
@@ -351,8 +351,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     cell = bump.custom_cell if bump.custom_cell is not None else bumps.cell,
                     c = bump.x,
                     r = bump.y,
-                    x = bump_offset_x + Decimal(str(bump.x - 1)) * Decimal(str(bumps.pitch)),
-                    y = bump_offset_y + Decimal(str(bump.y - 1)) * Decimal(str(bumps.pitch))))
+                    x = bump_offset_x + Decimal(bump.x_offset) + Decimal(str(bump.x - 1)) * Decimal(str(bumps.pitch)),
+                    y = bump_offset_y + Decimal(bump.y_offset) + Decimal(str(bump.y - 1)) * Decimal(str(bumps.pitch))))
                 if not bump.no_connect:
                     if bump.name in power_ground_nets:
                         self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bump.x, y=bump.y))
