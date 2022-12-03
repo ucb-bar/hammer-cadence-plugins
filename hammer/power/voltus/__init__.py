@@ -12,7 +12,7 @@ import json
 
 from hammer.config import HammerJSONEncoder
 from hammer.utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid, in_place_unique
-from hammer.vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue, VoltageValue
+from hammer.vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue, VoltageValue, FlowLevel
 from hammer.logging import HammerVLSILogging
 import hammer.tech as hammer_tech
 from hammer.tech.specialcells import CellType

@@ -13,14 +13,12 @@ import os
 import errno
 import json
 
-from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCornerType, FlowLevel, TimeValue
-from hammer_logging import HammerVLSILogging
-import hammer_tech
+from hammer.utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
+from hammer.vlsi import HammerPowerTool, HammerToolStep, MMMCCornerType, FlowLevel, TimeValue
+from hammer.logging import HammerVLSILogging
+import hammer.tech as hammer_tech
 
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.cadence.tool import CadenceTool
 
 
 class Joules(HammerPowerTool, CadenceTool):
