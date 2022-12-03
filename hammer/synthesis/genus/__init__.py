@@ -1,29 +1,24 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#
 #  hammer-vlsi plugin for Cadence Genus.
 #
 #  See LICENSE for licence details.
 
-from hammer_vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
-from hammer_utils import VerilogUtils
-from hammer_vlsi import HammerSynthesisTool
-from hammer_logging import HammerVLSILogging
-from hammer_vlsi import MMMCCornerType
-import hammer_tech
+from hammer.vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
+from hammer.utils import VerilogUtils
+from hammer.vlsi import HammerSynthesisTool
+from hammer.logging import HammerVLSILogging
+from hammer.vlsi import MMMCCornerType
+import hammer.tech as hammer_tech
 
 from typing import Dict, List, Any, Optional
 
-import specialcells
-from specialcells import CellType, SpecialCell
+import hammer.tech.specialcells
+from hammer.tech.specialcells import CellType, SpecialCell
 
 import os
 import json
 from collections import Counter
 
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.cadence.tool import CadenceTool
 
 
 class Genus(HammerSynthesisTool, CadenceTool):
@@ -291,7 +286,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
                 self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
                 return True
             tie_hi_cells = tie_hilo_cells
-            tie_lo_cells = tie_hilo_cells            
+            tie_lo_cells = tie_hilo_cells
 
         tie_hi_cell = tie_hi_cells[0].name[0]
         tie_lo_cell = tie_lo_cells[0].name[0]

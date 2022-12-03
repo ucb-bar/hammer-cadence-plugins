@@ -4,10 +4,10 @@ import os
 import json
 import copy
 
-from hammer_vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, ILMStruct
-from hammer_vlsi.constraints import MMMCCorner, MMMCCornerType
-from hammer_utils import optional_map, add_dicts
-import hammer_tech
+from hammer.vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, ILMStruct
+from hammer.vlsi.constraints import MMMCCorner, MMMCCornerType
+from hammer.utils import optional_map, add_dicts
+import hammer.tech as hammer_tech
 
 class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTool):
     """Mix-in trait with functions useful for Cadence-based tools."""

@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#
 #  hammer-vlsi plugin for Cadence Voltus.
 #
 #  See LICENSE for licence details.
@@ -13,16 +10,13 @@ import os
 import errno
 import json
 
-from hammer_config import HammerJSONEncoder
-from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid, in_place_unique
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, FlowLevel, TimeValue, VoltageValue
-from hammer_logging import HammerVLSILogging
-import hammer_tech
-from specialcells import CellType
-
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.config import HammerJSONEncoder
+from hammer.utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid, in_place_unique
+from hammer.vlsi import HammerPowerTool, HammerToolStep, MMMCCorner, MMMCCornerType, TimeValue, VoltageValue
+from hammer.logging import HammerVLSILogging
+import hammer.tech as hammer_tech
+from hammer.tech.specialcells import CellType
+from hammer.cadence.tool import CadenceTool
 
 
 class Voltus(HammerPowerTool, CadenceTool):
@@ -166,7 +160,7 @@ class Voltus(HammerPowerTool, CadenceTool):
     def init_technology(self) -> bool:
         corners = self.get_mmmc_corners()
 
-	    # Options for set_pg_library_mode
+        # Options for set_pg_library_mode
         base_options = ["-enable_distributed_processing", "true"]  # type: List[str]
         if self.get_setting("power.voltus.lef_layer_map"):
             base_options.extend(["-lef_layer_map", self.get_setting("power.voltus.lef_layer_map")])
@@ -180,7 +174,7 @@ class Voltus(HammerPowerTool, CadenceTool):
         tech_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.tech_lib_filter())
         if len(tech_pg_libs) > 0:
             self.logger.info("Technology already provides PG libraries. Moving onto macro PG libraries.")
-	    # Else, characterize tech & stdcell libraries only once
+        # Else, characterize tech & stdcell libraries only once
         elif not os.path.isdir(self.tech_lib_dir) or not os.path.isdir(self.stdcell_lib_dir):
             self.logger.info("Generating techonly and stdcell PG libraries for the first time...")
             ts_output = base_cmds.copy()
@@ -277,7 +271,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         if self.get_setting("power.voltus.macro_pgv"):
             m_output = base_cmds.copy()
-    	    # Characterize macro libraries once, unless list of extra libraries has been modified/changed
+            # Characterize macro libraries once, unless list of extra libraries has been modified/changed
             tech_lef = tech_lib_lefs[0]
             extra_lib_lefs = self.technology.read_libs([hammer_tech.filters.lef_filter], hammer_tech.HammerTechnologyUtils.to_plain_item, self.extra_lib_filter())
             extra_lib_mtimes = list(map(lambda l: os.path.getmtime(l), extra_lib_lefs))
@@ -290,7 +284,8 @@ class Voltus(HammerPowerTool, CadenceTool):
             if not os.path.isdir(self.macro_lib_dir):
                 self.logger.info("Characterizing macros for the first time...")
                 # First time: characterize all cells
-                macros = list(map(lambda l: l.library.name, named_extra_libs))
+                # macros = list(map(lambda l: l.library.name, named_extra_libs))
+                macros = [l.library.name for l in named_extra_libs if l.library.name is not None]
                 in_place_unique(macros)
                 self.macro_pgv_cells = macros
 
@@ -307,9 +302,10 @@ class Voltus(HammerPowerTool, CadenceTool):
                 with open(extra_lib_lefs_json, "w") as f:
                     f.write(json.dumps(extra_lib_lefs_mtimes, cls=HammerJSONEncoder, indent=4))
                 # Get LEFs which have been created/modified, match cell names if provided
-                mod_lefs = dict(set(extra_lib_lefs_mtimes.items()) - set(prior_extra_lib_lefs.items())).keys()
+                # TODO: these types don't line up, doubtful whether this code works as expected
+                mod_lefs = dict(set(extra_lib_lefs_mtimes.items()) - set(prior_extra_lib_lefs.items())).keys() # type: ignore
                 rechar_libs = list(filter(lambda l: l.library.lef_file in mod_lefs, named_extra_libs))
-                macros = list(map(lambda l: l.library.name, rechar_libs))
+                macros = list(map(lambda l: l.library.name, rechar_libs)) # type: ignore
                 in_place_unique(macros)
                 self.macro_pgv_cells = macros
 

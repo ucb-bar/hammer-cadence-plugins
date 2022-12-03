@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#
 #  hammer-vlsi plugin for Cadence Innovus.
 #
 #  See LICENSE for licence details.
@@ -12,20 +9,17 @@ from itertools import product
 import os
 import errno
 
-from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
+from hammer.utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
+from hammer.vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType
-from hammer_vlsi.units import CapacitanceValue
-from hammer_logging import HammerVLSILogging
-import hammer_tech
-from hammer_tech import RoutingDirection, Metal
-import specialcells
-from specialcells import CellType, SpecialCell
+from hammer.vlsi.units import CapacitanceValue
+from hammer.logging import HammerVLSILogging
+import hammer.tech as hammer_tech
+from hammer.tech import RoutingDirection, Metal
+import hammer.tech.specialcells
+from hammer.tech.specialcells import CellType, SpecialCell
 from decimal import Decimal
-
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.cadence.tool import CadenceTool
 
 # Notes: camelCase commands are the old syntax (deprecated)
 # snake_case commands are the new/common UI syntax.
@@ -443,7 +437,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         ex=fp_llx if pin.side != "right" else fp_urx,
                         ey=fp_lly if pin.side != "top" else fp_ury
                     )
-                    if len(pin.layers) > 1:
+                    if pin.layers and len(pin.layers) > 1:
                         pattern_arg = "-pattern fill_optimised"
                     else:
                         pattern_arg = "-spread_type range"
@@ -678,7 +672,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             else:
                 self.logger.error(
                     "par.inputs.gds_precision value of \"%s\" must be one of %s" %(
-                        gds_precision, ', '.join(valid_values)));
+                        gds_precision, ', '.join([str(x) for x in valid_values])));
                 return False
         # "auto", i.e. not "manual", means not specifying anything extra.
 

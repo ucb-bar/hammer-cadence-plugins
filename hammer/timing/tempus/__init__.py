@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#
 #  hammer-vlsi plugin for Cadence Tempus.
 #
 #  See LICENSE for licence details.
@@ -11,13 +8,11 @@ import os
 import sys
 import errno
 
-from hammer_vlsi import HammerTool, HammerTimingTool, HammerToolStep, HammerToolHookAction, \
+from hammer.vlsi import HammerTool, HammerTimingTool, HammerToolStep, HammerToolHookAction, \
        HierarchicalMode, MMMCCornerType
-from hammer_logging import HammerVLSILogging
-import hammer_tech
-
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.logging import HammerVLSILogging
+import hammer.tech as hammer_tech
+from hammer.cadence.tool import CadenceTool
 
 # Notes: this plugin should only use snake_case (common UI) commands.
 
