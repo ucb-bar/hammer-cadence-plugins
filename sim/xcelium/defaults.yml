@@ -1,0 +1,13 @@
+sim.xcelium:
+  version: "XCELIUM2103"
+
+  xcelium_bin: "${cadence.cadence_home}/XCELIUM/${sim.xcelium.version}/tools/xcelium/bin/64bit/xrun"  
+  xcelium_bin_meta: lazysubst
+  
+  xcelium_home: "${cadence.cadence_home}/XCELIUM/${sim.xcelium.version}"
+  xcelium_home_meta: lazysubst
+
+  xmlibdirname: null
+  xmlibdirpath: null
+
+  enhanced_recompile: true
