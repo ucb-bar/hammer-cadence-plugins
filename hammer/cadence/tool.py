@@ -19,8 +19,11 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
         Note to subclasses: remember to include variables from super().env_vars!
         """
         # Use the base extra_env_variables and ensure that our custom variables are on top.
-        list_of_vars = self.get_setting("cadence.extra_env_vars")  # type: List[Dict[str, Any]]
-        assert isinstance(list_of_vars, list)
+        try:
+            list_of_vars = self.get_setting("cadence.extra_env_vars")  # type: List[Dict[str, Any]]
+            assert isinstance(list_of_vars, list)
+        except KeyError:
+            list_of_vars = []
 
         cadence_vars = {
             "CDS_LIC_FILE": self.get_setting("cadence.CDS_LIC_FILE"),
