@@ -8,7 +8,7 @@ power.voltus:
 
   # Voltus version to use.
   # Used to locate the binary - e.g. the '181' in ${cadence.cadence_home}/VOLTUS/VOLTUS181/bin/voltus
-  version: "181"
+  version: "211"
 
   # Optional LEF <-> QRC layer mapping file if layers within are mismatched
   # Should be provided by the technology in a tab-separated 4-column format
