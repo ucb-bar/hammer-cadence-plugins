@@ -7,7 +7,10 @@ sim.xcelium:
   xcelium_home: "${cadence.cadence_home}/XCELIUM/${sim.xcelium.version}"
   xcelium_home_meta: lazysubst
 
+  # XRUN Top-Level Customization 
   xmlibdirname: null
   xmlibdirpath: null
-
+  simtmp: null
+  snapshot: null
   enhanced_recompile: true
+  global_access: true

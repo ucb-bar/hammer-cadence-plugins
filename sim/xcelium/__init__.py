@@ -7,6 +7,7 @@ import re
 import shutil
 import json
 import datetime
+import io
 from typing import Dict, List, Optional, Callable, Tuple
 from multiprocessing import Process
 
@@ -25,6 +26,15 @@ from tool import CadenceTool
 
 
 class xcelium(HammerSimTool, CadenceTool):
+
+  @property
+  def access_tab_file_path(self) -> str:
+      return os.path.join(self.run_dir, "access.tab")
+
+  @property
+  def steps(self) -> List[HammerToolStep]:
+    return self.make_steps_from_methods([self.write_gl_files,
+                                         self.run_xcelium])  
   
   @property
   def xcelium_ext(self) -> List[str]:
@@ -35,41 +45,111 @@ class xcelium(HammerSimTool, CadenceTool):
     z_ext        = [ext + ".z" for ext  in verilog_ext + sverilog_ext]
     return (verilog_ext + sverilog_ext + c_cxx_ext + gz_ext + z_ext)
 
-  @property
-  def steps(self) -> List[HammerToolStep]:
-    return self.make_steps_from_methods([self.run_xcelium])
-  
   def tool_config_prefix(self) -> str:
     return "sim.xcelium"
   
   def post_synth_sdc(self) -> Optional[str]:
     pass
 
-  def generate_arg_file(self, inputs: List[str]=[], options: List[str]=[]) -> None:
+  def write_gl_files(self) -> bool:
+    if self.level == FlowLevel.RTL:
+        return True
+
+    tb_prefix = self.get_setting("sim.inputs.tb_name") + '.' + self.get_setting("sim.inputs.tb_dut")
+    force_val = self.get_setting("sim.inputs.gl_register_force_value")
+    abspath_seq_cells = os.path.join(os.getcwd(), self.seq_cells)
+   
+    if not os.path.isfile(abspath_seq_cells):
+      self.logger.error(f"List of seq cells json not found as expected at {self.seq_cells}")
+
+    with open(self.access_tab_file_path, "w") as f:
+      with open(abspath_seq_cells) as seq_file:
+                seq_json = json.load(seq_file)
+                assert isinstance(seq_json, List), "List of all sequential cells should be a json list of strings not {}".format(type(seq_json))
+                for cell in seq_json:
+                    f.write("acc=wn:{cell_name}\n".format(cell_name=cell))
+
+    abspath_all_regs = os.path.join(os.getcwd(), self.all_regs)
+    if not os.path.isfile(abspath_all_regs):
+      self.logger.error("List of all regs json not found as expected at {0}".format(self.all_regs))
+
+    with open(self.force_regs_file_path, "w") as f:
+      with open(abspath_all_regs) as reg_file:
+          reg_json = json.load(reg_file)
+          assert isinstance(reg_json, List), "list of all sequential cells should be a json list of dictionaries from string to string not {}".format(type(reg_json))
+          for reg in sorted(reg_json, key=lambda r: len(r["path"])): # TODO: This is a workaround for a bug in P-2019.06
+            special_char =['[',']','#','$',';','!',"{",'}','\\']
+
+            path = reg["path"]
+            path = path.split('/')
+            path = [subpath.removesuffix('\\') for subpath in path]
+            path = ['@_{' + subpath + ' }' if any(char in subpath for char in special_char) else subpath for subpath in path]
+            path='.'.join(path)
+
+            pin = reg["pin"]
+            f.write("deposit " + tb_prefix + "." + path + "." + pin + " = " + str(force_val) + "\n")
+
+    return True
+
+
+  def fill_outputs(self) -> bool:
+      self.output_waveforms = []
+      self.output_saifs = []
+      self.output_top_module = self.top_module
+      self.output_tb_name = self.get_setting("sim.inputs.tb_name")
+      self.output_tb_dut = self.get_setting("sim.inputs.tb_dut")
+      self.output_level = self.get_setting("sim.inputs.level")
+      return True
+
+  # Create an argument file to collect xrun inputs, xrun options
+  def generate_arg_file(self, run_inputs: List[str]=[], run_directives: List[str]=[], run_additional_opts: List[str]=[]) -> None:
     arg_path = self.run_dir+"/xrun.args"
-    now = datetime.datetime.now()
-    
-    if(os.path.exists(arg_path)):
-      os.remove(arg_path)
-      
-    f = open(arg_path,"x")
-    f.write("#"+"="*39+"\n")
-    f.write("# HAMMER-GENERATED ARGUMENT FILE \n")
-    f.write(f"# CREATED AT {now} \n")
-    f.write("#"+"="*39+"\n")
-    
+
+    f = open(arg_path,"w+")
+    self.write_header("HAMMER-GENERATED ARGUMENT SCRIPT", f)    
     f.write("# XRUN INPUT FILES: \n")
-    for elem in inputs:
-      f.write(elem + "\n") 
-    
-    f.write("\n# XRUN OPTIONS: \n")
-    for elem in options:
-      f.write(elem + "\n") 
+    [f.write(elem + "\n") for elem in run_inputs]
+    f.write("\n# XRUN PRIMARY DIRECTIVES: \n")
+    [f.write(elem + "\n") for elem in run_directives]
+    f.write("\n# XRUN ADDITIONAL OPTIONS: \n")
+    [f.write(elem + "\n") for elem in run_additional_opts]
 
     f.close()  
     
     return arg_path  
-  
+
+  def generate_scripts(self) -> None:
+    gen_folder_path = self.run_dir+"/generated-scripts"
+    os.makedirs(gen_folder_path, exist_ok=True)
+    self.generate_open_sh(gen_folder_path)
+
+
+  # Create a bash script to help open generate databases
+  def generate_open_sh(self, gen_folder_path: str) -> None:
+    shell_script_path = gen_folder_path + "/open_db.sh"
+    tcl_script_path   = self.generate_open_tcl(gen_folder_path)
+        
+    f = open(shell_script_path,"w+")
+    self.write_header("HAMMER-GENERATED BASH SCRIPT", f)    
+    f.write("#!/bin/bash \n")
+    f.write(f"xrun -input {tcl_script_path}")
+
+  def generate_open_tcl(self, gen_folder_path: str) -> str: 
+    script_path = gen_folder_path + "/open_db_xcelium.tcl"
+
+    f = open(script_path,"w+")
+    self.write_header("HAMMER-GENERATED TCL SCRIPT", f)    
+    return script_path
+
+  # Used in all generate functions
+  def write_header(self, header: str, wrapper: io.TextIOWrapper)->None:
+    now = datetime.datetime.now()
+    wrapper.write("#"+"="*39+"\n")
+    wrapper.write("# "+header+"\n")
+    wrapper.write(f"# CREATED AT {now} \n")
+    wrapper.write("#"+"="*39+"\n")
+    wrapper.write("#!/bin/bash \n")
+
   def run_xcelium(self) -> bool:
     
     xcelium_bin = self.get_setting("sim.xcelium.xcelium_bin")
@@ -80,38 +160,48 @@ class xcelium(HammerSimTool, CadenceTool):
     if not self.check_input_files(self.xcelium_ext):
       return False
 
-    # Extract settings
+    # Top-level directives that are explicit. Slightly cumbersome but is quite clear.
     tb_name             = self.get_setting("sim.inputs.tb_name")    
     timescale           = self.get_setting("sim.inputs.timescale")
     enhanced_recompile  = self.get_setting("sim.xcelium.enhanced_recompile")
     xmlibdirname        = self.get_setting("sim.xcelium.xmlibdirname")    
     xmlibdirpath        = self.get_setting("sim.xcelium.xmlibdirpath")    
-    abspath_input_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  
-
+    simtmp              = self.get_setting("sim.xcelium.simtmp")    
+    snapshot            = self.get_setting("sim.xcelium.snapshot")  
+    global_access       = self.get_setting("sim.xcelium.global_access") 
+    sim_options         = ["-" + opt for opt in self.get_setting("sim.inputs.options", [])]
     
-    # Generate run options
-    options = []
-    options.append(f"-top {tb_name}")
+    run_inputs = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  
+
+    run_directives = []
+    run_directives.append(f"-top {tb_name}")
     
     if timescale is not None:
-      options.append(f"-timescale {timescale}")
+      run_directives.append(f"-timescale {timescale}")
     if enhanced_recompile is True:
-      options.append("-fast_recompilation")
+      run_directives.append("-fast_recompilation")
     if xmlibdirname is not None:
-      options.append("xmlibdirname {xmlibdirname}")
+      run_directives.append(f"-xmlibdirname {xmlibdirname}")
     if xmlibdirpath is not None:
-      options.append("xmlibdirpath {xmlibdirpath}")
-
+      run_directives.append(f"-xmlibdirpath {xmlibdirpath}")
+    if simtmp is not None:
+      run_directives.append(f"-simtmp {simtmp}")
+    if snapshot is not None:
+      run_directives.append(f"-snapshot {snapshot}")
+    if global_access is True:
+      run_directives.append(f"+access+rcw")    
+    
     # Create combined arg file
-    arg_file = self.generate_arg_file(abspath_input_files, options)
+    arg_file = self.generate_arg_file(run_inputs, run_directives, sim_options)
     
     # Execute
     args = []
     args.append(xcelium_bin)
     args.extend(["-f", arg_file]) 
-
-    # Execute
     self.run_executable(args, cwd=self.run_dir)
+
+    # Create generated scripts
+    self.generate_scripts()
 
     HammerVLSILogging.enable_colour = True
     HammerVLSILogging.enable_tag = True
