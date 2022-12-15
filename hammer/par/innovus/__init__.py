@@ -366,7 +366,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         tap_cells = self.technology.get_special_cell_by_type(CellType.TapCell)
 
         if len(tap_cells) == 0:
-            self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook.")
+            self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook or tapcell special cell should be added to the tech.json.")
             return True
 
         tap_cell = tap_cells[0].name[0]
@@ -378,9 +378,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.append("add_well_taps -cell_interval {INTERVAL} -in_row_offset {OFFSET}".format(INTERVAL=interval, OFFSET=offset))
         except KeyError:
             pass
-        finally:
-            self.logger.warning(
-                "You have not overridden place_tap_cells. By default this step adds a simple set of tapcells or does nothing; you will have trouble with power strap creation later.")
         return True
 
     def place_pins(self) -> bool:
