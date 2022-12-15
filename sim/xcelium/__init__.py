@@ -101,10 +101,17 @@ class xcelium(HammerSimTool, CadenceTool):
       self.output_level = self.get_setting("sim.inputs.level")
       return True
 
-  # Create an argument file to collect xrun inputs, xrun options
-  def generate_arg_file(self, run_inputs: List[str]=[], run_directives: List[str]=[], run_additional_opts: List[str]=[]) -> None:
-    arg_path = self.run_dir+"/xrun.args"
+  # Label generated files
+  def write_header(self, header: str, wrapper: io.TextIOWrapper)->None:
+    now = datetime.datetime.now()
+    wrapper.write("# "+"="*39+"\n")
+    wrapper.write("# "+header+"\n")
+    wrapper.write(f"# CREATED AT {now} \n")
+    wrapper.write("# "+"="*39+"\n")
 
+  # Create a combined argument file to collect xrun inputs, xrun options
+  def generate_arg_file(self, run_inputs: List[str]=[], run_directives: List[str]=[], run_additional_opts: List[str]=[]) -> str:
+    arg_path = self.run_dir+"/xrun.args"
     f = open(arg_path,"w+")
     self.write_header("HAMMER-GENERATED ARGUMENT SCRIPT", f)    
     f.write("# XRUN INPUT FILES: \n")
@@ -113,18 +120,42 @@ class xcelium(HammerSimTool, CadenceTool):
     [f.write(elem + "\n") for elem in run_directives]
     f.write("\n# XRUN ADDITIONAL OPTIONS: \n")
     [f.write(elem + "\n") for elem in run_additional_opts]
-
     f.close()  
     
     return arg_path  
+
+  # Create a tcl file for additional Xcelium TCL commands invoked during an xrun call
+  def generate_xrun_tcl(self) -> str:
+    # Collet tcl dump settings
+    tcl_dump  = self.get_setting("sim.xcelium.tcl_dump")
+    dump_type = self.get_setting("sim.inputs.dump.settings.type")
+    dump_name = self.get_setting("sim.inputs.dump.settings.name", "waveform")
+    if self.get_setting("sim.inputs.dump.settings.compression"):
+      dump_compression = "-compress"
+    else:
+      dump_compression = ""
+
+    tcl_path = self.run_dir+"/xrun.tcl"
+    f = open(tcl_path,"w+")
+    self.write_header("HAMMER-GENERATED TCL SCRIPT", f)    
+    if tcl_dump:
+      if dump_type == "VCD":
+        f.write(f"database -open -vcd vcddb -into {dump_name}.vcd -default {dump_compression} \n")
+      if dump_type == "EVCD":
+        f.write(f"database -open -evcd evcddb -into {dump_name}.evcd -default {dump_compression} \n")
+      if dump_type == "SHM":
+        f.write(f"database -open -shm shmdb -into {dump_name}.shm -default {dump_compression} \n")
+    f.write("database -close *db \n")
+    f.write("exit")
+    f.close()  
+
+    return tcl_path
 
   def generate_scripts(self) -> None:
     gen_folder_path = self.run_dir+"/generated-scripts"
     os.makedirs(gen_folder_path, exist_ok=True)
     self.generate_open_sh(gen_folder_path)
 
-
-  # Create a bash script to help open generate databases
   def generate_open_sh(self, gen_folder_path: str) -> None:
     shell_script_path = gen_folder_path + "/open_db.sh"
     tcl_script_path   = self.generate_open_tcl(gen_folder_path)
@@ -140,15 +171,7 @@ class xcelium(HammerSimTool, CadenceTool):
     f = open(script_path,"w+")
     self.write_header("HAMMER-GENERATED TCL SCRIPT", f)    
     return script_path
-
-  # Used in all generate functions
-  def write_header(self, header: str, wrapper: io.TextIOWrapper)->None:
-    now = datetime.datetime.now()
-    wrapper.write("#"+"="*39+"\n")
-    wrapper.write("# "+header+"\n")
-    wrapper.write(f"# CREATED AT {now} \n")
-    wrapper.write("#"+"="*39+"\n")
-    wrapper.write("#!/bin/bash \n")
+  
 
   def run_xcelium(self) -> bool:
     
@@ -160,22 +183,26 @@ class xcelium(HammerSimTool, CadenceTool):
     if not self.check_input_files(self.xcelium_ext):
       return False
 
-    # Top-level directives that are explicit. Slightly cumbersome but is quite clear.
-    tb_name             = self.get_setting("sim.inputs.tb_name")    
-    timescale           = self.get_setting("sim.inputs.timescale")
+    # Primary directives that are explicit. Slightly cumbersome but is quite clear.
     enhanced_recompile  = self.get_setting("sim.xcelium.enhanced_recompile")
     xmlibdirname        = self.get_setting("sim.xcelium.xmlibdirname")    
     xmlibdirpath        = self.get_setting("sim.xcelium.xmlibdirpath")    
     simtmp              = self.get_setting("sim.xcelium.simtmp")    
     snapshot            = self.get_setting("sim.xcelium.snapshot")  
     global_access       = self.get_setting("sim.xcelium.global_access") 
-    sim_options         = ["-" + opt for opt in self.get_setting("sim.inputs.options", [])]
     
-    run_inputs = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  
+    tb_name             = self.get_setting("sim.inputs.tb_name")    
+    timescale           = self.get_setting("sim.inputs.timescale")
+    sim_options         = self.get_setting("sim.inputs.options", [])
 
+    tcl_file = self.generate_xrun_tcl()
+
+    run_inputs = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  
     run_directives = []
     run_directives.append(f"-top {tb_name}")
-    
+
+    if global_access is True:
+      run_directives.append(f"+access+rcw")      
     if timescale is not None:
       run_directives.append(f"-timescale {timescale}")
     if enhanced_recompile is True:
@@ -188,9 +215,7 @@ class xcelium(HammerSimTool, CadenceTool):
       run_directives.append(f"-simtmp {simtmp}")
     if snapshot is not None:
       run_directives.append(f"-snapshot {snapshot}")
-    if global_access is True:
-      run_directives.append(f"+access+rcw")    
-    
+    run_directives.append(f"-input {tcl_file}") 
     # Create combined arg file
     arg_file = self.generate_arg_file(run_inputs, run_directives, sim_options)
     

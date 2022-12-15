@@ -14,3 +14,7 @@ sim.xcelium:
   snapshot: null
   enhanced_recompile: true
   global_access: true
+  tcl_dump: true
+
+
+  
