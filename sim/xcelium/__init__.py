@@ -88,13 +88,13 @@ class xcelium(HammerSimTool, CadenceTool):
     return True
 
   def fill_outputs(self) -> bool:
-      self.output_waveforms = []
-      self.output_saifs = []
-      self.output_top_module = self.top_module
-      self.output_tb_name = self.get_setting("sim.inputs.tb_name")
-      self.output_tb_dut = self.get_setting("sim.inputs.tb_dut")
-      self.output_level = self.get_setting("sim.inputs.level")
-      return True
+    self.output_waveforms = []
+    self.output_saifs = []
+    self.output_top_module = self.top_module
+    self.output_tb_name = self.get_setting("sim.inputs.tb_name")
+    self.output_tb_dut = self.get_setting("sim.inputs.tb_dut")
+    self.output_level = self.get_setting("sim.inputs.level")
+    return True
 
   # Label generated files
   def write_header(self, header: str, wrapper: io.TextIOWrapper)->None:
@@ -144,11 +144,10 @@ class xcelium(HammerSimTool, CadenceTool):
         f.write(f"database -open -evcd evcddb -into {dump_name}.evcd -default {dump_compression} \n")
       if dump_type == "SHM":
         f.write(f"database -open -shm shmdb -into {dump_name}.shm -event -default {dump_compression} {shm_incr} \n")
-      #f.write("probe -create -all -depth all \n")
       if signal_paths is not None:
         [f.write(f"probe -create {signal} \n") for signal in signal_paths]
       if signal_opts is not None:
-        [f.write(f"{signal_opts} \n") for opt in signal_opts]
+        [f.write(f"{opt} \n") for opt in signal_opts]
 
     f.write("run \n")
     f.write("database -close *db \n")
@@ -184,7 +183,7 @@ class xcelium(HammerSimTool, CadenceTool):
     if not os.path.isfile(xcelium_bin):
       self.logger.error(f"Xcelium (xrun) binary not found at {xcelium_bin}.")
       return False
-    
+
     if not self.check_input_files(self.xcelium_ext):
       return False
 
@@ -228,7 +227,7 @@ class xcelium(HammerSimTool, CadenceTool):
     
     tcl_file = self.generate_sim_tcl()
     run_directives.append(f"-input {tcl_file}") 
-    
+
     # Create combined arg file
     arg_file = self.generate_arg_file(run_inputs, run_directives, sim_options)
     
