@@ -3,7 +3,11 @@ sim.xcelium:
 
   xcelium_bin: "${cadence.cadence_home}/XCELIUM/${sim.xcelium.version}/tools/xcelium/bin/64bit/xrun"  
   xcelium_bin_meta: lazysubst
-  
+
+  xmsimrc_def: "${cadence.cadence_home}/XCELIUM/${sim.xcelium.version}/tools/xcelium/files/xmsimrc"
+  xmsimrc_def_meta: lazysubst
+
+
   xcelium_home: "${cadence.cadence_home}/XCELIUM/${sim.xcelium.version}"
   xcelium_home_meta: lazysubst
 
@@ -14,7 +18,8 @@ sim.xcelium:
   snapshot: null
   enhanced_recompile: true
   global_access: true
-  tcl_dump: true
-
+  tcl_mode: true
+  
+  
 
   

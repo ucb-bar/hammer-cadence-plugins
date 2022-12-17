@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-#  HAMMER-VLSI PLUGIN, XCELIUM 
+# HAMMER-VLSI PLUGIN, XCELIUM 
 
 import os
 import re
@@ -8,34 +8,30 @@ import shutil
 import json
 import datetime
 import io
+import sys
 from typing import Dict, List, Optional, Callable, Tuple
 from multiprocessing import Process
 
 import hammer_utils
 import hammer_tech
-
 from hammer_tech import HammerTechnologyUtils
 from hammer_vlsi import FlowLevel, TimeValue
 from hammer_vlsi import HammerSimTool, HammerToolStep, HammerLSFSubmitCommand, HammerLSFSettings
 from hammer_logging import HammerVLSILogging
-import hammer_tech
 
-import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
 from tool import CadenceTool
-
-
 class xcelium(HammerSimTool, CadenceTool):
 
   @property
   def access_tab_file_path(self) -> str:
-      return os.path.join(self.run_dir, "access.tab")
+    return os.path.join(self.run_dir, "access.tab")
 
   @property
   def steps(self) -> List[HammerToolStep]:
     return self.make_steps_from_methods([self.write_gl_files,
                                          self.run_xcelium])  
-  
+    
   @property
   def xcelium_ext(self) -> List[str]:
     verilog_ext  = [".v", ".V", ".VS", ".vp", ".VP"]
@@ -91,7 +87,6 @@ class xcelium(HammerSimTool, CadenceTool):
 
     return True
 
-
   def fill_outputs(self) -> bool:
       self.output_waveforms = []
       self.output_saifs = []
@@ -124,27 +119,38 @@ class xcelium(HammerSimTool, CadenceTool):
     
     return arg_path  
 
-  # Create a tcl file for additional Xcelium TCL commands invoked during an xrun call
-  def generate_xrun_tcl(self) -> str:
-    # Collet tcl dump settings
-    tcl_dump  = self.get_setting("sim.xcelium.tcl_dump")
-    dump_type = self.get_setting("sim.inputs.dump.settings.type")
-    dump_name = self.get_setting("sim.inputs.dump.settings.name", "waveform")
-    if self.get_setting("sim.inputs.dump.settings.compression"):
-      dump_compression = "-compress"
-    else:
-      dump_compression = ""
-
-    tcl_path = self.run_dir+"/xrun.tcl"
+  # Creates a tcl driver
+  def generate_sim_tcl(self) -> str:
+    xmsimrc_def = self.get_setting("sim.xcelium.xmsimrc_def")
+    tcl_path    = self.run_dir+"/xrun.tcl"
+    tcl_mode    = self.get_setting("sim.xcelium.tcl_mode")
+    
     f = open(tcl_path,"w+")
     self.write_header("HAMMER-GENERATED TCL SCRIPT", f)    
-    if tcl_dump:
+    f.write(f"source {xmsimrc_def} \n")
+    
+    if tcl_mode:
+      # Waveform dumping
+      signal_paths = self.get_setting("sim.waveform.signal_paths")
+      signal_opts  = self.get_setting("sim.waveform.signal_opts")
+      dump_type    = self.get_setting("sim.waveform.type")
+      dump_name    = self.get_setting("sim.waveform.dump_name", "waveform")
+      dump_compression = "-compress" if self.get_setting("sim.waveform.compression") else ""
+      shm_incr  = "-incsize 5G" if self.get_setting("sim.waveform.shm_incr") else ""
+
       if dump_type == "VCD":
         f.write(f"database -open -vcd vcddb -into {dump_name}.vcd -default {dump_compression} \n")
       if dump_type == "EVCD":
         f.write(f"database -open -evcd evcddb -into {dump_name}.evcd -default {dump_compression} \n")
       if dump_type == "SHM":
-        f.write(f"database -open -shm shmdb -into {dump_name}.shm -default {dump_compression} \n")
+        f.write(f"database -open -shm shmdb -into {dump_name}.shm -event -default {dump_compression} {shm_incr} \n")
+      #f.write("probe -create -all -depth all \n")
+      if signal_paths is not None:
+        [f.write(f"probe -create {signal} \n") for signal in signal_paths]
+      if signal_opts is not None:
+        [f.write(f"{signal_opts} \n") for opt in signal_opts]
+
+    f.write("run \n")
     f.write("database -close *db \n")
     f.write("exit")
     f.close()  
@@ -171,7 +177,6 @@ class xcelium(HammerSimTool, CadenceTool):
     f = open(script_path,"w+")
     self.write_header("HAMMER-GENERATED TCL SCRIPT", f)    
     return script_path
-  
 
   def run_xcelium(self) -> bool:
     
@@ -183,26 +188,31 @@ class xcelium(HammerSimTool, CadenceTool):
     if not self.check_input_files(self.xcelium_ext):
       return False
 
-    # Primary directives that are explicit. Slightly cumbersome but is quite clear.
+    # xrun customization options (xrun-specific, non-sim related) 
     enhanced_recompile  = self.get_setting("sim.xcelium.enhanced_recompile")
     xmlibdirname        = self.get_setting("sim.xcelium.xmlibdirname")    
     xmlibdirpath        = self.get_setting("sim.xcelium.xmlibdirpath")    
     simtmp              = self.get_setting("sim.xcelium.simtmp")    
     snapshot            = self.get_setting("sim.xcelium.snapshot")  
     global_access       = self.get_setting("sim.xcelium.global_access") 
-    
+    # Important sim-related options
     tb_name             = self.get_setting("sim.inputs.tb_name")    
     timescale           = self.get_setting("sim.inputs.timescale")
     sim_options         = self.get_setting("sim.inputs.options", [])
+    sim_defines         = self.get_setting("sim.inputs.defines", [])
+    sim_incdirs         = self.get_setting("sim.inputs.incdir", [])
 
-    tcl_file = self.generate_xrun_tcl()
-
+    # Assemble run command
     run_inputs = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  
     run_directives = []
     run_directives.append(f"-top {tb_name}")
 
     if global_access is True:
-      run_directives.append(f"+access+rcw")      
+      run_directives.append(f"+access+rcw")
+    for define in sim_defines:
+      run_directives.extend(['-define ' + define])
+    for incdir in sim_incdirs:
+      run_directives.extend(['-incdir ' + incdir])      
     if timescale is not None:
       run_directives.append(f"-timescale {timescale}")
     if enhanced_recompile is True:
@@ -215,11 +225,14 @@ class xcelium(HammerSimTool, CadenceTool):
       run_directives.append(f"-simtmp {simtmp}")
     if snapshot is not None:
       run_directives.append(f"-snapshot {snapshot}")
+    
+    tcl_file = self.generate_sim_tcl()
     run_directives.append(f"-input {tcl_file}") 
+    
     # Create combined arg file
     arg_file = self.generate_arg_file(run_inputs, run_directives, sim_options)
     
-    # Execute
+    # Execute command
     args = []
     args.append(xcelium_bin)
     args.extend(["-f", arg_file]) 
