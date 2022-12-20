@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # HAMMER-VLSI PLUGIN, XCELIUM 
+# Notes: This plugin sets up xrun to execute in a three-step runset.
 
 import os
 import re
@@ -21,17 +22,9 @@ from hammer_logging import HammerVLSILogging
 
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
 from tool import CadenceTool
+
 class xcelium(HammerSimTool, CadenceTool):
 
-  @property
-  def access_tab_file_path(self) -> str:
-    return os.path.join(self.run_dir, "access.tab")
-
-  @property
-  def steps(self) -> List[HammerToolStep]:
-    return self.make_steps_from_methods([self.write_gl_files,
-                                         self.run_xcelium])  
-    
   @property
   def xcelium_ext(self) -> List[str]:
     verilog_ext  = [".v", ".V", ".VS", ".vp", ".VP"]
@@ -41,60 +34,109 @@ class xcelium(HammerSimTool, CadenceTool):
     z_ext        = [ext + ".z" for ext  in verilog_ext + sverilog_ext]
     return (verilog_ext + sverilog_ext + c_cxx_ext + gz_ext + z_ext)
 
+  @property
+  def steps(self) -> List[HammerToolStep]:
+    return self.make_steps_from_methods([self.compile_xrun,
+                                         self.elaborate_xrun,
+                                         self.sim_xrun])
+    
+  @property
   def tool_config_prefix(self) -> str:
     return "sim.xcelium"
   
+  @property
+  def sim_input_prefix(self) -> str:
+    return "sim.inputs"
+  
+  @property
+  def sim_waveform_prefix(self) -> str:
+    return "sim.waveform"
+  
+  @property
+  def xcelium_bin(self) -> str:
+    return self.get_setting("sim.xcelium.xcelium_bin")
+    
   def post_synth_sdc(self) -> Optional[str]:
     pass
 
   def write_gl_files(self) -> bool:
-    if self.level == FlowLevel.RTL:
-        return True
-
-    tb_prefix = self.get_setting("sim.inputs.tb_name") + '.' + self.get_setting("sim.inputs.tb_dut")
-    force_val = self.get_setting("sim.inputs.gl_register_force_value")
-    abspath_seq_cells = os.path.join(os.getcwd(), self.seq_cells)
-   
-    if not os.path.isfile(abspath_seq_cells):
-      self.logger.error(f"List of seq cells json not found as expected at {self.seq_cells}")
-
-    with open(self.access_tab_file_path, "w") as f:
-      with open(abspath_seq_cells) as seq_file:
-                seq_json = json.load(seq_file)
-                assert isinstance(seq_json, List), "List of all sequential cells should be a json list of strings not {}".format(type(seq_json))
-                for cell in seq_json:
-                    f.write("acc=wn:{cell_name}\n".format(cell_name=cell))
-
-    abspath_all_regs = os.path.join(os.getcwd(), self.all_regs)
-    if not os.path.isfile(abspath_all_regs):
-      self.logger.error("List of all regs json not found as expected at {0}".format(self.all_regs))
-
-    with open(self.force_regs_file_path, "w") as f:
-      with open(abspath_all_regs) as reg_file:
-          reg_json = json.load(reg_file)
-          assert isinstance(reg_json, List), "list of all sequential cells should be a json list of dictionaries from string to string not {}".format(type(reg_json))
-          for reg in sorted(reg_json, key=lambda r: len(r["path"])): # TODO: This is a workaround for a bug in P-2019.06
-            special_char =['[',']','#','$',';','!',"{",'}','\\']
-
-            path = reg["path"]
-            path = path.split('/')
-            path = [subpath.removesuffix('\\') for subpath in path]
-            path = ['@_{' + subpath + ' }' if any(char in subpath for char in special_char) else subpath for subpath in path]
-            path='.'.join(path)
-
-            pin = reg["pin"]
-            f.write("deposit " + tb_prefix + "." + path + "." + pin + " = " + str(force_val) + "\n")
-
     return True
-
+  
+        
   def fill_outputs(self) -> bool:
     self.output_waveforms = []
     self.output_saifs = []
     self.output_top_module = self.top_module
-    self.output_tb_name = self.get_setting("sim.inputs.tb_name")
-    self.output_tb_dut = self.get_setting("sim.inputs.tb_dut")
-    self.output_level = self.get_setting("sim.inputs.level")
+    self.output_tb_name = self.get_setting(f"{self.sim_input_prefix}.tb_name")
+    self.output_tb_dut = self.get_setting(f"{self.sim_input_prefix}.tb_dut")
+    self.output_level = self.get_setting(f"{self.sim_input_prefix}.level")
     return True
+   
+  # Process xrun options 
+  # Maintain a raw and processed dictionary (for now).
+  def extract_xrun_opts(self) -> Dict[str, str]:
+    xrun_opts_def = [("enhanced_recompile", True),
+                     ("xmlibdirname", None),
+                     ("xmlibdirpath", None),
+                     ("simtmp", None),
+                     ("snapshot", None),
+                     ("global_access", True)]
+
+    xrun_opts = {opt[0] : self.get_setting(f"{self.tool_config_prefix}.{opt[0]}", opt[1]) for opt in xrun_opts_def}
+    xrun_opts_proc = xrun_opts.copy()
+    bool_list = ["global_access", "enhanced_recompile"]
+    
+    if xrun_opts_proc ["global_access"]: xrun_opts_proc ["global_access"] = "+access+rcw"
+    if xrun_opts_proc ["enhanced_recompile"]: xrun_opts_proc ["enhanced_recompile"] = "-fast_recompilation"
+    for opt, setting in xrun_opts_proc.items():
+      if opt not in bool_list and setting is not None:
+        xrun_opts_proc [opt] = f"-{opt} {setting}"
+    
+    return xrun_opts_proc
+  
+  # Process sim options
+  def extract_sim_opts(self) -> Dict[str, str]:
+    abspath_input_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))
+    sim_opts_def =  [("tb_name", None),
+                     ("timescale", None),
+                     ("defines", None),
+                     ("incdir", None),
+                     ("gl_register_force_value", 0),
+                     ("options", None)]
+
+    sim_opts = {opt[0] : self.get_setting(f"{self.sim_input_prefix}.{opt[0]}", opt[1]) for opt in sim_opts_def}
+    sim_opts_proc = sim_opts.copy()
+    sim_opts_proc ["input_files"] =  "\n".join([input for input in abspath_input_files])
+    sim_opts_proc ["tb_name"]   = "-top " + sim_opts_proc ["tb_name"]
+    sim_opts_proc ["timescale"] = "-timescale " + sim_opts_proc ["timescale"]
+    if sim_opts_proc ["defines"] is not None: sim_opts_proc ["defines"] = "\n".join(["-define " + define for define in sim_opts_proc ["defines"]]) 
+    if sim_opts_proc ["incdir"] is not None:  sim_opts_proc ["incdir"]  = "\n".join(["-incdir " + incdir for incdir in sim_opts_proc ["incdir"]]) 
+    if sim_opts_proc ["options"] is not None: sim_opts_proc ["options"] = "\n".join([opt for opt in sim_opts_proc ["options"]]) 
+    if sim_opts_proc ["gl_register_force_value"] == 0: 
+      sim_opts_proc ["gl_register_force_value"] = "-initreg0"
+    elif sim_opts_proc ["gl_register_force_value"] == 1:
+      sim_opts_proc ["gl_register_force_value"] = "-initreg1"
+    else:
+      self.logger.error("Unsupported value chosen for force value.")
+
+    return sim_opts_proc
+
+  # Process waveform options 
+  def extract_waveform_opts(self) -> Dict[str, str]:
+    wav_opts_def = [("type", None),
+                    ("dump_name", "waveform"),
+                    ("compression", False),
+                    ("shm_incr", "5G"),
+                    ("probe_paths", None),
+                    ("tcl_opts", None)]
+
+    wav_opts = {opt[0] : self.get_setting(f"{self.sim_waveform_prefix}.{opt[0]}", opt[1]) for opt in wav_opts_def}
+    wav_opts_proc = wav_opts.copy()
+    wav_opts_proc ["compression"] = "-compress" if wav_opts ["compression"] else ""
+    if wav_opts_proc ["probe_paths"] is not None: wav_opts_proc ["probe_paths"] = "\n".join(["probe -create " + path for path in wav_opts_proc ["probe_paths"]]) 
+    if wav_opts_proc ["tcl_opts"] is not None:    wav_opts_proc ["tcl_opts"]    = "\n".join(opt for opt in wav_opts_proc ["tcl_opts"]) 
+
+    return wav_opts_proc
 
   # Label generated files
   def write_header(self, header: str, wrapper: io.TextIOWrapper)->None:
@@ -104,50 +146,54 @@ class xcelium(HammerSimTool, CadenceTool):
     wrapper.write(f"# CREATED AT {now} \n")
     wrapper.write("# "+"="*39+"\n")
 
-  # Create a combined argument file to collect xrun inputs, xrun options
-  def generate_arg_file(self, run_inputs: List[str]=[], run_directives: List[str]=[], run_additional_opts: List[str]=[]) -> str:
-    arg_path = self.run_dir+"/xrun.args"
+  # Create an xrun.arg file
+  def generate_arg_file(self, 
+                        file_name: str, 
+                        header: str, 
+                        additional_opt: List[Tuple[str, List[str]]] = [],
+                        sim_opt_removal: List[str]=[],
+                        xrun_opt_removal: List[str]=[]) -> str:
+
+    # Xrun opts and sim opts must generally be carried through for 1:1:1 correspondence between calls.
+    # However, certain opts must be removed in the xrun_sim call. 
+    xrun_opts = self.extract_xrun_opts()
+    sim_opts  = self.extract_sim_opts() 
+    [sim_opts.pop(opt, None) for opt in sim_opt_removal]
+    [xrun_opts.pop(opt, None) for opt in xrun_opt_removal]
+
+    arg_path  = self.run_dir+f"/{file_name}"
     f = open(arg_path,"w+")
-    self.write_header("HAMMER-GENERATED ARGUMENT SCRIPT", f)    
-    f.write("# XRUN INPUT FILES: \n")
-    [f.write(elem + "\n") for elem in run_inputs]
-    f.write("\n# XRUN PRIMARY DIRECTIVES: \n")
-    [f.write(elem + "\n") for elem in run_directives]
-    f.write("\n# XRUN ADDITIONAL OPTIONS: \n")
-    [f.write(elem + "\n") for elem in run_additional_opts]
+    self.write_header(header, f)    
+    
+    f.write("\n# XRUN OPTIONS: \n")
+    [f.write(elem + "\n") for elem in xrun_opts.values() if elem is not None]
+    f.write("\n# SIM OPTIONS: \n")
+    [f.write(elem + "\n") for elem in sim_opts.values() if elem is not None]
+    for opt_list in additional_opt: 
+      if opt_list[1]: 
+        f.write(f"\n# {opt_list[0]} OPTIONS: \n")
+        [f.write(elem + "\n") for elem in opt_list[1]]
     f.close()  
     
     return arg_path  
-
-  # Creates a tcl driver
+  
+  # Creates a tcl driver for sim step.
   def generate_sim_tcl(self) -> str:
     xmsimrc_def = self.get_setting("sim.xcelium.xmsimrc_def")
+    wav_opts    = self.extract_waveform_opts()
     tcl_path    = self.run_dir+"/xrun.tcl"
-    tcl_mode    = self.get_setting("sim.xcelium.tcl_mode")
-    
+
     f = open(tcl_path,"w+")
-    self.write_header("HAMMER-GENERATED TCL SCRIPT", f)    
+    self.write_header("HAMMER-GEN SIM TCL DRIVER", f)    
     f.write(f"source {xmsimrc_def} \n")
     
-    if tcl_mode:
-      # Waveform dumping
-      signal_paths = self.get_setting("sim.waveform.signal_paths")
-      signal_opts  = self.get_setting("sim.waveform.signal_opts")
-      dump_type    = self.get_setting("sim.waveform.type")
-      dump_name    = self.get_setting("sim.waveform.dump_name", "waveform")
-      dump_compression = "-compress" if self.get_setting("sim.waveform.compression") else ""
-      shm_incr  = "-incsize 5G" if self.get_setting("sim.waveform.shm_incr") else ""
-
-      if dump_type == "VCD":
-        f.write(f"database -open -vcd vcddb -into {dump_name}.vcd -default {dump_compression} \n")
-      if dump_type == "EVCD":
-        f.write(f"database -open -evcd evcddb -into {dump_name}.evcd -default {dump_compression} \n")
-      if dump_type == "SHM":
-        f.write(f"database -open -shm shmdb -into {dump_name}.shm -event -default {dump_compression} {shm_incr} \n")
-      if signal_paths is not None:
-        [f.write(f"probe -create {signal} \n") for signal in signal_paths]
-      if signal_opts is not None:
-        [f.write(f"{opt} \n") for opt in signal_opts]
+    if wav_opts["type"] is not None:
+      if wav_opts["type"] == "VCD": f.write(f'database -open -vcd vcddb -into {wav_opts["dump_name"]}.vcd -default {wav_opts["compression"]} \n')
+      elif wav_opts["type"] == "EVCD": f.write(f'database -open -evcd evcddb -into {wav_opts["dump_name"]}.evcd -default {wav_opts["compression"]} \n')
+      elif wav_opts["type"] == "SHM": f.write(f'database -open -shm shmdb -into {wav_opts["dump_name"]}.shm -event -default {wav_opts["compression"]} {wav_opts["shm_incr"]} \n')
+      
+      if wav_opts["probe_paths"] is not None: [f.write(f'{wav_opts["probe_paths"]}\n')]
+      if wav_opts["tcl_opts"] is not None: [f.write(f'{wav_opts["tcl_opts"]}\n')]
 
     f.write("run \n")
     f.write("database -close *db \n")
@@ -156,92 +202,57 @@ class xcelium(HammerSimTool, CadenceTool):
 
     return tcl_path
 
-  def generate_scripts(self) -> None:
-    gen_folder_path = self.run_dir+"/generated-scripts"
-    os.makedirs(gen_folder_path, exist_ok=True)
-    self.generate_open_sh(gen_folder_path)
+  # In order to bridge the gap between multi-tool direct-invocation and xrun single-invocation,
+  # xrun multiple-invocation is implemented in this plugin.
 
-  def generate_open_sh(self, gen_folder_path: str) -> None:
-    shell_script_path = gen_folder_path + "/open_db.sh"
-    tcl_script_path   = self.generate_open_tcl(gen_folder_path)
-        
-    f = open(shell_script_path,"w+")
-    self.write_header("HAMMER-GENERATED BASH SCRIPT", f)    
-    f.write("#!/bin/bash \n")
-    f.write(f"xrun -input {tcl_script_path}")
-
-  def generate_open_tcl(self, gen_folder_path: str) -> str: 
-    script_path = gen_folder_path + "/open_db_xcelium.tcl"
-
-    f = open(script_path,"w+")
-    self.write_header("HAMMER-GENERATED TCL SCRIPT", f)    
-    return script_path
-
-  def run_xcelium(self) -> bool:
+  def compile_xrun(self) -> bool:
     
-    xcelium_bin = self.get_setting("sim.xcelium.xcelium_bin")
-    if not os.path.isfile(xcelium_bin):
-      self.logger.error(f"Xcelium (xrun) binary not found at {xcelium_bin}.")
+    if not os.path.isfile(self.xcelium_bin):
+      self.logger.error(f"Xcelium (xrun) binary not found at {self.xcelium_bin}.")
       return False
-
+  
     if not self.check_input_files(self.xcelium_ext):
       return False
-
-    # xrun customization options (xrun-specific, non-sim related) 
-    enhanced_recompile  = self.get_setting("sim.xcelium.enhanced_recompile")
-    xmlibdirname        = self.get_setting("sim.xcelium.xmlibdirname")    
-    xmlibdirpath        = self.get_setting("sim.xcelium.xmlibdirpath")    
-    simtmp              = self.get_setting("sim.xcelium.simtmp")    
-    snapshot            = self.get_setting("sim.xcelium.snapshot")  
-    global_access       = self.get_setting("sim.xcelium.global_access") 
-    # Important sim-related options
-    tb_name             = self.get_setting("sim.inputs.tb_name")    
-    timescale           = self.get_setting("sim.inputs.timescale")
-    sim_options         = self.get_setting("sim.inputs.options", [])
-    sim_defines         = self.get_setting("sim.inputs.defines", [])
-    sim_incdirs         = self.get_setting("sim.inputs.incdir", [])
-
-    # Assemble run command
-    run_inputs = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  
-    run_directives = []
-    run_directives.append(f"-top {tb_name}")
-
-    if global_access is True:
-      run_directives.append(f"+access+rcw")
-    for define in sim_defines:
-      run_directives.extend(['-define ' + define])
-    for incdir in sim_incdirs:
-      run_directives.extend(['-incdir ' + incdir])      
-    if timescale is not None:
-      run_directives.append(f"-timescale {timescale}")
-    if enhanced_recompile is True:
-      run_directives.append("-fast_recompilation")
-    if xmlibdirname is not None:
-      run_directives.append(f"-xmlibdirname {xmlibdirname}")
-    if xmlibdirpath is not None:
-      run_directives.append(f"-xmlibdirpath {xmlibdirpath}")
-    if simtmp is not None:
-      run_directives.append(f"-simtmp {simtmp}")
-    if snapshot is not None:
-      run_directives.append(f"-snapshot {snapshot}")
     
-    tcl_file = self.generate_sim_tcl()
-    run_directives.append(f"-input {tcl_file}") 
-
-    # Create combined arg file
-    arg_file = self.generate_arg_file(run_inputs, run_directives, sim_options)
+    compile_opts = ('COMPILE', self.get_setting(f"{self.tool_config_prefix}.compile_opts", []))
+    arg_file_path = self.generate_arg_file("xrun_compile.arg", "HAMMER-GEN XRUN COMPILE ARG FILE", [compile_opts])
+    args =[self.xcelium_bin]
+    args.append(f"-compile -f {arg_file_path}")
     
-    # Execute command
-    args = []
-    args.append(xcelium_bin)
-    args.extend(["-f", arg_file]) 
     self.run_executable(args, cwd=self.run_dir)
-
-    # Create generated scripts
-    self.generate_scripts()
-
     HammerVLSILogging.enable_colour = True
     HammerVLSILogging.enable_tag = True
     return True
   
+  def elaborate_xrun(self) -> bool:
+    sim_opts  = self.extract_sim_opts()       
+    elab_opts = self.get_setting(f"{self.tool_config_prefix}.elab_opts", [])
+    
+    if self.level.is_gatelevel():
+      elab_opts.append(sim_opts["gl_register_force_value"])    
+    
+    elab_opts = ('ELABORATION', elab_opts)
+    arg_file_path = self.generate_arg_file("xrun_elab.arg", "HAMMER-GEN XRUN ELAB ARG FILE", [elab_opts])
+    args =[self.xcelium_bin]
+    args.append(f"-elaborate -f {arg_file_path}")
+    
+    self.run_executable(args, cwd=self.run_dir)
+    return True
+
+  def sim_xrun(self) -> bool:
+
+    sim_opts = ('SIMULATION', self.get_setting(f"{self.sim_input_prefix}.options", []))
+    sim_opts_removal  = ["tb_name", "input_files", "incdir"]
+    xrun_opts_removal = ["enhanced_recompile"]
+    arg_file_path = self.generate_arg_file("xrun_sim.arg", "HAMMER-GEN XRUN SIM ARG FILE", [sim_opts],
+                                           sim_opt_removal = sim_opts_removal,
+                                           xrun_opt_removal = xrun_opts_removal)
+    tcl_path = self.generate_sim_tcl()
+    
+    args =[self.xcelium_bin]
+    args.append(f"-R -f {arg_file_path} -input {tcl_path}")
+    
+    self.run_executable(args, cwd=self.run_dir)
+    return True
+
 tool = xcelium

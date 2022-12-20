@@ -12,14 +12,14 @@ sim.xcelium:
   xcelium_home_meta: lazysubst
 
   # XRUN Top-Level Customization 
+  enhanced_recompile: True
   xmlibdirname: null
   xmlibdirpath: null
   simtmp: null
   snapshot: null
-  enhanced_recompile: true
-  global_access: true
-  tcl_mode: true
+  global_access: True
+  tcl_mode: False
+  compile_opts:
+  elab_opts:
   
-  
-
   
