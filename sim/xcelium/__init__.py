@@ -55,13 +55,18 @@ class xcelium(HammerSimTool, CadenceTool):
   @property
   def xcelium_bin(self) -> str:
     return self.get_setting("sim.xcelium.xcelium_bin")
-    
+
   def post_synth_sdc(self) -> Optional[str]:
     pass
 
   def write_gl_files(self) -> bool:
     return True
   
+  def get_verilog_models(self) -> List[str]:
+    verilog_sim_files = self.technology.read_libs([
+        hammer_tech.filters.verilog_sim_filter
+    ], hammer_tech.HammerTechnologyUtils.to_plain_item)
+    return verilog_sim_files
         
   def fill_outputs(self) -> bool:
     self.output_waveforms = []
@@ -101,7 +106,7 @@ class xcelium(HammerSimTool, CadenceTool):
                      ("timescale", None),
                      ("defines", None),
                      ("incdir", None),
-                     ("gl_register_force_value", 0),
+                     ("gl_register_force_value", None),
                      ("options", None)]
 
     sim_opts = {opt[0] : self.get_setting(f"{self.sim_input_prefix}.{opt[0]}", opt[1]) for opt in sim_opts_def}
@@ -112,14 +117,7 @@ class xcelium(HammerSimTool, CadenceTool):
     if sim_opts_proc ["defines"] is not None: sim_opts_proc ["defines"] = "\n".join(["-define " + define for define in sim_opts_proc ["defines"]]) 
     if sim_opts_proc ["incdir"] is not None:  sim_opts_proc ["incdir"]  = "\n".join(["-incdir " + incdir for incdir in sim_opts_proc ["incdir"]]) 
     if sim_opts_proc ["options"] is not None: sim_opts_proc ["options"] = "\n".join([opt for opt in sim_opts_proc ["options"]]) 
-    if sim_opts_proc ["gl_register_force_value"] == 0: 
-      sim_opts_proc ["gl_register_force_value"] = "-initreg0"
-    elif sim_opts_proc ["gl_register_force_value"] == 1:
-      sim_opts_proc ["gl_register_force_value"] = "-initreg1"
-    else:
-      self.logger.error("Unsupported value chosen for force value.")
-
-    return sim_opts_proc
+    if not self.level.is_gatelevel(): sim_opts_proc ["gl_register_force_value"] = None
 
   # Process waveform options 
   def extract_waveform_opts(self) -> Dict[str, str]:
@@ -186,6 +184,7 @@ class xcelium(HammerSimTool, CadenceTool):
     f = open(tcl_path,"w+")
     self.write_header("HAMMER-GEN SIM TCL DRIVER", f)    
     f.write(f"source {xmsimrc_def} \n")
+           
     
     if wav_opts["type"] is not None:
       if wav_opts["type"] == "VCD": f.write(f'database -open -vcd vcddb -into {wav_opts["dump_name"]}.vcd -default {wav_opts["compression"]} \n')
@@ -213,8 +212,11 @@ class xcelium(HammerSimTool, CadenceTool):
   
     if not self.check_input_files(self.xcelium_ext):
       return False
+
+    compile_opts  = self.get_setting(f"{self.tool_config_prefix}.compile_opts", [])       
+    compile_opts.append("-logfile xrun_compile.log")
+    compile_opts = ('COMPILE', compile_opts)
     
-    compile_opts = ('COMPILE', self.get_setting(f"{self.tool_config_prefix}.compile_opts", []))
     arg_file_path = self.generate_arg_file("xrun_compile.arg", "HAMMER-GEN XRUN COMPILE ARG FILE", [compile_opts])
     args =[self.xcelium_bin]
     args.append(f"-compile -f {arg_file_path}")
@@ -224,12 +226,12 @@ class xcelium(HammerSimTool, CadenceTool):
     HammerVLSILogging.enable_tag = True
     return True
   
-  def elaborate_xrun(self) -> bool:
-    sim_opts  = self.extract_sim_opts()       
+  def elaborate_xrun(self) -> bool:    
     elab_opts = self.get_setting(f"{self.tool_config_prefix}.elab_opts", [])
-    
-    if self.level.is_gatelevel():
-      elab_opts.append(sim_opts["gl_register_force_value"])    
+    elab_opts.append("-logfile xrun_elab.log")
+    #if self.level.is_gatelevel():
+    #  elab_opts.append(sim_opts["gl_register_force_value"])    
+    elab_opts.extend(self.get_verilog_models())
     
     elab_opts = ('ELABORATION', elab_opts)
     arg_file_path = self.generate_arg_file("xrun_elab.arg", "HAMMER-GEN XRUN ELAB ARG FILE", [elab_opts])
