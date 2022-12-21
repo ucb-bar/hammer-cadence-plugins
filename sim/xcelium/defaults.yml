@@ -17,7 +17,7 @@ sim.xcelium:
   xmlibdirpath: null
   simtmp: null
   snapshot: null
-  global_access: True
+  global_access: False
   tcl_mode: False
   compile_opts:
   elab_opts:
