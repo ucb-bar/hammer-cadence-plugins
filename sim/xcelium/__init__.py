@@ -224,16 +224,13 @@ class xcelium(HammerSimTool, CadenceTool):
       for reg in sorted(reg_json, key=lambda r: len(r["path"])): # TODO: This is a workaround for a bug in P-2019.06
         path = reg["path"]
         path = path.split('/')
-        path = [subpath.removesuffix('\\') for subpath in path]
         special_char =['[',']','#','$',';','!',"{",'}','\\']
-        #path = ['@_{' + subpath + '}' if any(char in subpath for char in special_char) else subpath for subpath in path]
-        #path = ['${' + subpath + '}' if any(char in subpath for char in special_char) else subpath for subpath in path]
-        path = [subpath if any(char in subpath for char in special_char) else subpath for subpath in path]
-
+        path = ['@{' + subpath + ' }' if any(char in subpath for char in special_char) else subpath for subpath in path]
         path='.'.join(path)
         pin = reg["pin"]
         formatted_paths.append(tb_prefix + "." + path)
-        formatted_deposit.append("deposit " + "@{" + tb_prefix + "." + path + "." + pin + ' ' + str(force_val) + "}")
+        formatted_deposit.append("deposit " + tb_prefix + "." + path + ".o" + " = " + str(force_val))
+        
     self.generate_access_args(formatted_paths,"+rw-c")
     return formatted_deposit
 
@@ -320,7 +317,7 @@ class xcelium(HammerSimTool, CadenceTool):
                                            xrun_opt_removal = xrun_opts_removal)    
     args =[self.xcelium_bin]
     args.append(f"-R -f {arg_file_path} -input {self.sim_tcl_file}")
-    
+
     self.generate_sim_tcl() 
     self.run_executable(args, cwd=self.run_dir)
     return True
