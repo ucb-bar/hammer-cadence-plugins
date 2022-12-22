@@ -60,7 +60,11 @@ class xcelium(HammerSimTool, CadenceTool):
   @property
   def sim_tcl_file(self) -> str: 
     return os.path.join(self.run_dir, "xrun_sim.tcl")
-
+    
+  @property
+  def sdf_cmd_file(self) -> str:
+    return os.path.join(self.run_dir, "design.sdf_cmd")
+  
   def post_synth_sdc(self) -> Optional[str]:
     pass
 
@@ -189,7 +193,7 @@ class xcelium(HammerSimTool, CadenceTool):
   # Deposit values
   # Try to maintain some parity with vcs plugin.
   def generate_gl_deposit_tcl(self) -> List[str]:
-    sim_opts_proc, sim_opts  = self.extract_sim_opts() 
+    sim_opts  = self.extract_sim_opts() [1]
     tb_prefix = sim_opts["tb_name"] + '.' + sim_opts["tb_dut"]
     force_val = sim_opts["gl_register_force_value"]
     
@@ -208,9 +212,20 @@ class xcelium(HammerSimTool, CadenceTool):
         path = ['@{' + subpath + ' }' if any(char in subpath for char in special_char) else subpath for subpath in path]
         path='.'.join(path)
         pin = reg["pin"]
-        formatted_deposit.append("deposit " + tb_prefix + "." + path + "." + pin + " = " + str(force_val) + " -release")
+        formatted_deposit.append("deposit " + tb_prefix + "." + path + "." + pin + " = " + str(force_val))
         
     return formatted_deposit
+
+  # Creates an sdf cmd file for command line driven sdf annotation
+  def generate_sdf_cmd_file(self) -> bool:
+    sim_opts  = self.extract_sim_opts() [1]
+    prefix = sim_opts["tb_name"] + '.' + sim_opts["tb_dut"]
+
+    f = open(self.sdf_cmd_file,"w+")
+    f.write(f'SDF_FILE = "{self.sdf_file}", \n')
+    f.write(f'SCOPE = "{prefix}";')
+    f.close()
+    return True
 
   # Creates a tcl driver for sim step.
   def generate_sim_tcl(self) -> bool:
@@ -262,13 +277,18 @@ class xcelium(HammerSimTool, CadenceTool):
     HammerVLSILogging.enable_colour = True
     HammerVLSILogging.enable_tag = True
     return True
-  
+    
   def elaborate_xrun(self) -> bool: 
     # Gather elaboration-only options
     elab_opts = self.get_setting(f"{self.tool_config_prefix}.elab_opts", [])
     elab_opts.append("-logfile xrun_elab.log")
     elab_opts.append("-glsperf")
-    elab_opts.append("-genafile access.txt")    
+    elab_opts.append("-genafile access.txt")  
+    self.generate_sdf_cmd_file()
+    elab_opts.append(f"-sdf_cmd_file {self.sdf_cmd_file}")  
+
+    elab_opts.append("-sdf_verbose")
+    elab_opts.append("-negdelay")
     if self.level.is_gatelevel(): elab_opts.extend(self.get_verilog_models())    
     elab_opts = ('ELABORATION', elab_opts)
     
