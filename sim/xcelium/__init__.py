@@ -280,13 +280,12 @@ class xcelium(HammerSimTool, CadenceTool):
     
   def elaborate_xrun(self) -> bool: 
     # Gather elaboration-only options
+    self.generate_sdf_cmd_file()
     elab_opts = self.get_setting(f"{self.tool_config_prefix}.elab_opts", [])
     elab_opts.append("-logfile xrun_elab.log")
     elab_opts.append("-glsperf")
     elab_opts.append("-genafile access.txt")  
-    self.generate_sdf_cmd_file()
     elab_opts.append(f"-sdf_cmd_file {self.sdf_cmd_file}")  
-
     elab_opts.append("-sdf_verbose")
     elab_opts.append("-negdelay")
     if self.level.is_gatelevel(): elab_opts.extend(self.get_verilog_models())    
@@ -303,7 +302,7 @@ class xcelium(HammerSimTool, CadenceTool):
     sim_opts = self.get_setting(f"{self.sim_input_prefix}.options", [])
     sim_opts_removal  = ["tb_name", "input_files", "incdir"]
     xrun_opts_removal = ["enhanced_recompile"]
-    sim_opts = ('SIMULATION', sim_opts) 
+    sim_opts = ('SIMULATION', sim_opts)
     
     arg_file_path = self.generate_arg_file("xrun_sim.arg", "HAMMER-GEN XRUN SIM ARG FILE", [sim_opts],
                                            sim_opt_removal = sim_opts_removal,
