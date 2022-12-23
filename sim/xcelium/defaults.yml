@@ -20,5 +20,6 @@ sim.xcelium:
   global_access: False
   compile_opts: null
   elab_opts: null
-  
+
+# Some convenience simulation options:
 sim.inputs.waveform.type: null
