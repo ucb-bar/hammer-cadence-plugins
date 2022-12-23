@@ -223,7 +223,9 @@ class xcelium(HammerSimTool, CadenceTool):
 
     f = open(self.sdf_cmd_file,"w+")
     f.write(f'SDF_FILE = "{self.sdf_file}", \n')
-    f.write(f'SCOPE = "{prefix}";')
+    f.write(f'MTM_CONTROL = "MAXIMUM", \n')
+    f.write(f'SCALE_TYPE = "FROM_MAXIMUM", \n')
+    f.write(f'SCOPE = {prefix};')
     f.close()
     return True
 
@@ -288,6 +290,7 @@ class xcelium(HammerSimTool, CadenceTool):
     elab_opts.append(f"-sdf_cmd_file {self.sdf_cmd_file}")  
     elab_opts.append("-sdf_verbose")
     elab_opts.append("-negdelay")
+    elab_opts.append("-sdf_worstcase_rounding")
     if self.level.is_gatelevel(): elab_opts.extend(self.get_verilog_models())    
     elab_opts = ('ELABORATION', elab_opts)
     
