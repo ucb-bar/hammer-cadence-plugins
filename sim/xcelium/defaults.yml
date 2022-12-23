@@ -18,8 +18,7 @@ sim.xcelium:
   simtmp: null
   snapshot: null
   global_access: False
-  tcl_mode: False
-  compile_opts:
-  elab_opts:
+  compile_opts: null
+  elab_opts: null
   
-  
+sim.inputs.waveform.type: null

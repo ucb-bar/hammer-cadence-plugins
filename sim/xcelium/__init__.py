@@ -4,6 +4,7 @@
 # Notes: This plugin sets up xrun to execute in a three-step xrun invocation.
 #        This bridges multi-tool direct-invocation and the xrun single-invocation.
 
+
 import os
 import re
 import shutil
@@ -51,7 +52,7 @@ class xcelium(HammerSimTool, CadenceTool):
   
   @property
   def sim_waveform_prefix(self) -> str:
-    return "sim.waveform"
+    return "sim.inputs.waveform"
   
   @property
   def xcelium_bin(self) -> str:
@@ -87,10 +88,10 @@ class xcelium(HammerSimTool, CadenceTool):
     return True
    
   # Several extract functions are used to process keys in one location. 
-  # Processes keys into cmd line options, but also returns a raw input dictionary. 
+  # Processes keys into cmd line options for convenience, but returns a raw input dictionary as well. 
 
   # Process xrun options 
-  def extract_xrun_opts(self) -> Dict[str, str]:
+  def extract_xrun_opts(self) -> Tuple[Dict[str, str], Dict[str, str]]:
     xrun_opts_def = [("enhanced_recompile", True),
                      ("xmlibdirname", None),
                      ("xmlibdirpath", None),
@@ -134,7 +135,7 @@ class xcelium(HammerSimTool, CadenceTool):
     return sim_opts_proc, sim_opts
 
   # Process waveform options 
-  def extract_waveform_opts(self) -> Dict[str, str]:
+  def extract_waveform_opts(self) -> Tuple[Dict[str, str], Dict[str, str]]:
     wav_opts_def = [("type", None),
                     ("dump_name", "waveform"),
                     ("compression", False),
@@ -149,6 +150,16 @@ class xcelium(HammerSimTool, CadenceTool):
     if wav_opts_proc ["tcl_opts"] is not None:    wav_opts_proc ["tcl_opts"]    = "\n".join(opt for opt in wav_opts_proc ["tcl_opts"]) 
 
     return wav_opts_proc, wav_opts
+
+  def extract_saif_opts(self) -> Dict[str, str]:
+    saif_opts_def =  [("mode", None),
+                      ("start_time", None),
+                      ("end_time", None),
+                      ("start_trigger_raw", None),
+                      ("end_trigger_raw", None)]
+
+    saif_opts = {opt[0] : self.get_setting(f"{self.sim_input_prefix}.saif.{opt[0]}", opt[1]) for opt in saif_opts_def}
+    return saif_opts
 
   # Label generated files
   def write_header(self, header: str, wrapper: io.TextIOWrapper)->None:
@@ -167,7 +178,7 @@ class xcelium(HammerSimTool, CadenceTool):
                         xrun_opt_removal: List[str]=[]) -> str:
 
     # Xrun opts and sim opts must generally be carried through for 1:1:1 correspondence between calls.
-    # However, certain opts must be removed (e.g., during sim step)
+    # However, certain opts must be removed (e.g., during sim step), leading to the inclusion of removal opts.
     xrun_opts_proc = self.extract_xrun_opts()[0]
     sim_opts_proc  = self.extract_sim_opts()[0]
     sim_opt_removal.extend(["gl_register_force_value", "tb_dut"]) 
@@ -216,9 +227,10 @@ class xcelium(HammerSimTool, CadenceTool):
         
     return formatted_deposit
 
-  # Creates an sdf cmd file for command line driven sdf annotation
+  # Creates an sdf cmd file for command line driven sdf annotation.
+  # Until sdf annotation provides values other than maximum, sdf_cmd_file will only support mtm max.
   def generate_sdf_cmd_file(self) -> bool:
-    sim_opts  = self.extract_sim_opts() [1]
+    sim_opts  = self.extract_sim_opts()[1]
     prefix = sim_opts["tb_name"] + '.' + sim_opts["tb_dut"]
 
     f = open(self.sdf_cmd_file,"w+")
@@ -229,15 +241,44 @@ class xcelium(HammerSimTool, CadenceTool):
     f.close()
     return True
 
-  # Creates a tcl driver for sim step.
+  # Creates saif arguments for tcl commands for tcl driver.
+  def generate_saif_tcl_cmd(self) -> str:
+    saif_opts = self.extract_saif_opts()
+    sim_opts  = self.extract_sim_opts()[1]
+    prefix = sim_opts["tb_name"] + '.' + sim_opts["tb_dut"]
+
+    saif_args = ""
+
+    # Process saif options
+    if saif_opts["mode"] == "time":
+      saif_start_time = saif_opts["start_time"]
+      saif_end_time   = saif_opts["end_time"]
+    elif saif_opts["mode"] == "full":
+      pass
+    else:
+      self.logger.warning("Bad saif_mode:${saif_mode}. Valid modes are time, full, or none. Defaulting to none.")
+      saif_opts["mode"] = None
+    
+    if saif_opts["mode"] is not None: 
+      if saif_opts["mode"] == "time":
+        stime = TimeValue(saif_start_time)
+        etime = TimeValue(saif_end_time)
+        saif_args = saif_args + f'dumpsaif -output ucli.saif -scope {prefix} -start {stime.value_in_units("ns")}ns -stop{etime.value_in_units("ns")}ns'
+      elif saif_opts["mode"] == "full":
+        saif_args = saif_args + f"dumpsaif -output ucli.saif -scope {prefix}"
+    return saif_args
+
+  # Creates a tcl driver for simulation.
   def generate_sim_tcl(self) -> bool:
     xmsimrc_def = self.get_setting("sim.xcelium.xmsimrc_def")
+    saif_opts   = self.extract_saif_opts()
     wav_opts_proc, wav_opts = self.extract_waveform_opts()
 
     f = open(self.sim_tcl_file,"w+")
     self.write_header("HAMMER-GEN SIM TCL DRIVER", f)    
     f.write(f"source {xmsimrc_def} \n")
     
+    # Prepare waveform dump options.
     if wav_opts["type"] is not None:
       if wav_opts["type"]   == "VCD":  f.write(f'database -open -vcd vcddb -into {wav_opts["dump_name"]}.vcd -default {wav_opts_proc["compression"]} \n')
       elif wav_opts["type"] == "EVCD": f.write(f'database -open -evcd evcddb -into {wav_opts["dump_name"]}.evcd -default {wav_opts_proc["compression"]} \n')
@@ -246,11 +287,19 @@ class xcelium(HammerSimTool, CadenceTool):
         [f.write(f'{wav_opts_proc["probe_paths"]}\n')]
       if wav_opts_proc["tcl_opts"] is not None: [f.write(f'{wav_opts_proc["tcl_opts"]}\n')]
     
+    # Deposit gl values at time 0.
     if self.level.is_gatelevel(): 
       formatted_deposit = self.generate_gl_deposit_tcl()
       [f.write(f'{deposit}\n') for deposit in formatted_deposit]
 
+    # Create saif
+    if saif_opts["mode"] is not None:
+      f.write(f'{self.generate_saif_tcl_cmd()}\n')
+    
     f.write("run \n")
+    # Close databases, dumps properly
+    if saif_opts["mode"] is not None:
+      f.write("dumpsaif -end \n")
     f.write("database -close *db \n")
     f.write("exit")
     f.close()  
@@ -281,17 +330,25 @@ class xcelium(HammerSimTool, CadenceTool):
     return True
     
   def elaborate_xrun(self) -> bool: 
+    
     # Gather elaboration-only options
     self.generate_sdf_cmd_file()
     elab_opts = self.get_setting(f"{self.tool_config_prefix}.elab_opts", [])
     elab_opts.append("-logfile xrun_elab.log")
     elab_opts.append("-glsperf")
     elab_opts.append("-genafile access.txt")  
-    elab_opts.append(f"-sdf_cmd_file {self.sdf_cmd_file}")  
-    elab_opts.append("-sdf_verbose")
-    elab_opts.append("-negdelay")
-    elab_opts.append("-sdf_worstcase_rounding")
-    if self.level.is_gatelevel(): elab_opts.extend(self.get_verilog_models())    
+    if self.level.is_gatelevel():
+      elab_opts.extend(self.get_verilog_models())    
+      if self.get_setting("sim.inputs.timing_annotated"):
+        elab_opts.append(f"-sdf_cmd_file {self.sdf_cmd_file}")  
+        elab_opts.append("-sdf_verbose")
+        elab_opts.append("-negdelay")
+      else:
+        elab_opts.append("-notimingchecks")
+        elab_opts.append("-delay_mode zero")
+    else:
+      elab_opts.append("-notimingchecks")
+      elab_opts.append("-delay_mode zero")
     elab_opts = ('ELABORATION', elab_opts)
     
     arg_file_path = self.generate_arg_file("xrun_elab.arg", "HAMMER-GEN XRUN ELAB ARG FILE", [elab_opts])
@@ -302,6 +359,8 @@ class xcelium(HammerSimTool, CadenceTool):
     return True
 
   def sim_xrun(self) -> bool:
+    
+    # Gather sim-only options
     sim_opts = self.get_setting(f"{self.sim_input_prefix}.options", [])
     sim_opts_removal  = ["tb_name", "input_files", "incdir"]
     xrun_opts_removal = ["enhanced_recompile"]
