@@ -110,7 +110,7 @@ class xcelium(HammerSimTool, CadenceTool):
     if xrun_opts_proc ["enhanced_recompile"]:
       xrun_opts_proc ["enhanced_recompile"] = "-fast_recompilation"
     else:
-      xrun_opts_proc ["global_access"] = ""
+      xrun_opts_proc ["enhanced_recompile"] = ""
 
     for opt, setting in xrun_opts_proc.items():
       if opt not in bool_list and setting is not None:
