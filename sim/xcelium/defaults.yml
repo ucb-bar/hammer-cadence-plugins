@@ -25,8 +25,16 @@ sim.xcelium:
   snapshot: null
   # If true, enables +rwc access globally. Makes debug easier but slows performance.
   global_access: False
+
+  # 
+  mce_build_cpu_configuration: single-socket
+
+  mce_build_thread_count:
+  # 
+  mce_sim_cpu_configuration: single-socket
+  #
+  mce_sim_thread_count: single-socket
+
   compile_opts: null
   elab_opts: null
 
-# Some convenience simulation options:
-sim.inputs.waveform.type: null

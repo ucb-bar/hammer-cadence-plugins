@@ -1,28 +1,20 @@
 sim.xcelium:
   # Tool version (e.g., "XCELIUM2103")
   version: str
-
   # Path to xcelium binary.
   xcelium_bin: str
-
   # Path to xmsimrc_def file.
   xmsimrc_def: str
-
   # If true, enable fast recompilation. 
   enhanced_recompile: bool
-
   # Specifies alternative name for xcelium.d working directory
   xmlibdirname: str
-
   # Specifies alternative location for xcelium.d working directory
   xmlibdirpath: str
-
   # Specifies alternative scratch location for sims.
   simtmp: str
-
   # Create an elaborated snapshot of specified name.
   snapshot: null
-
   # If true, enables +rwc access globally. Makes debug easier but slows performance.
   global_access: False
 
