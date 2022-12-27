@@ -73,16 +73,6 @@ class xcelium(HammerSimTool, CadenceTool):
   def sdf_cmd_file(self) -> str:
     return os.path.join(self.run_dir, "design.sdf_cmd")
   
-  # The current sim_opts
-  @property
-  def sim_opts(self) -> Dict[Str, Str]:
-      return self.extract_sim_opts()[1]
-
-  @property
-  def sim_opts(self) -> Dict[Str, Str]:
-      return self.extract_sim_opts()[1]
-
-  
   def post_synth_sdc(self) -> Optional[str]:
     pass
   
@@ -106,7 +96,7 @@ class xcelium(HammerSimTool, CadenceTool):
     if saif_opts ["mode"] is not None:
       self.output_saifs.append(os.path.join(self.run_dir, "ucli.saif"))
     if wav_opts["type"] is not None:
-      extension = wav_opts["type"].str.lower()
+      extension = wav_opts["type"].lower()
       self.output_waveforms.append(os.path.join(self.run_dir, f'{wav_opts["dump_name"]}.{extension}'))
 
     return True
