@@ -3,7 +3,14 @@
 # HAMMER-VLSI PLUGIN, XCELIUM 
 # Notes: This plugin sets up xrun to execute in a three-step xrun invocation.
 #        This bridges multi-tool direct-invocation and the xrun single-invocation.
-
+#        As a primer, Xcelium currently supports three methods of running simulations:
+#        1) Single call xrun: The recommended Cadence use-style that generates work and scratch dirs,
+#           invokes appropriate compilers and settings based on input files, and generally simplifies the
+#           simulation process.
+#        2) Multi call xrun: Offers the ability to split the flow into 3 parts with added complications,
+#           but is clearer when deep access to each step is required. Has all the utility of a direct
+#           invocation use-style with the added convenience of single call xrun.
+#        3) Direct invocation of xmvlog, xmelab, xmsim tools. No intermediate processing is done. 
 
 import os
 import re
@@ -12,8 +19,7 @@ import json
 import datetime
 import io
 import sys
-from typing import Dict, List, Optional, Callable, Tuple
-from multiprocessing import Process
+from typing import Dict, List, Optional, Tuple
 
 import hammer_utils
 import hammer_tech
@@ -68,9 +74,6 @@ class xcelium(HammerSimTool, CadenceTool):
   
   def post_synth_sdc(self) -> Optional[str]:
     pass
-
-  def write_gl_files(self) -> bool:
-    return True
   
   def get_verilog_models(self) -> List[str]:
     verilog_sim_files = self.technology.read_libs([
@@ -79,12 +82,21 @@ class xcelium(HammerSimTool, CadenceTool):
     return verilog_sim_files
         
   def fill_outputs(self) -> bool:
+    saif_opts = self.extract_saif_opts()
+    wav_opts = self.extract_waveform_opts()[1]
+
     self.output_waveforms = []
     self.output_saifs = []
     self.output_top_module = self.top_module
     self.output_tb_name = self.get_setting(f"{self.sim_input_prefix}.tb_name")
     self.output_tb_dut = self.get_setting(f"{self.sim_input_prefix}.tb_dut")
     self.output_level = self.get_setting(f"{self.sim_input_prefix}.level")
+    
+    if saif_opts ["mode"] is not None:
+      self.output_saifs.append(os.path.join(self.run_dir, "ucli.saif"))
+    if wav_opts["type"] is not None:
+      self.output_waveforms.append(os.path.join(self.run_dir, f'{wav_opts["dump_name"]}.vcd'))
+
     return True
    
   # Several extract functions are used to process mandatory keys into string options. 
@@ -124,7 +136,8 @@ class xcelium(HammerSimTool, CadenceTool):
                      ("tb_dut", None),
                      ("timescale", None),
                      ("defines", None),
-                     ("incdir", None)]
+                     ("incdir", None),
+                     ("execute_sim", True)]
 
     sim_opts = {opt[0] : self.get_setting(f"{self.sim_input_prefix}.{opt[0]}", opt[1]) for opt in sim_opts_def}
     
@@ -173,8 +186,10 @@ class xcelium(HammerSimTool, CadenceTool):
     
     if saif_opts ["mode"] == "time":
       saif_opts ["start_time"] = self.get_setting(f"{self.sim_input_prefix}.saif.start_time")
-      saif_opts ["end_time"] = self.get_setting(f"{self.sim_input_prefix}.saif.end_time")
-    
+      saif_opts ["end_time"]   = self.get_setting(f"{self.sim_input_prefix}.saif.end_time")
+    if saif_opts ["mode"] == "trigger_raw":
+      saif_opts ["start_trigger_raw"] = self.get_setting(f"{self.sim_input_prefix}.saif.start_trigger_raw")
+      saif_opts ["end_trigger_raw"]   = self.get_setting(f"{self.sim_input_prefix}.saif.end_trigger_raw")
     return saif_opts
 
   # Label generated files
@@ -197,7 +212,7 @@ class xcelium(HammerSimTool, CadenceTool):
     # However, certain opts must be removed (e.g., during sim step), leading to the inclusion of removal opts.
     xrun_opts_proc = self.extract_xrun_opts()[0]
     sim_opts_proc  = self.extract_sim_opts()[0]
-    sim_opt_removal.extend(["gl_register_force_value", "tb_dut", "timing_annotated"]) # Always remove these.
+    sim_opt_removal.extend(["tb_dut", "execute_sim", "gl_register_force_value", "timing_annotated"]) # Always remove these.
     [xrun_opts_proc.pop(opt, None) for opt in xrun_opt_removal]
     [sim_opts_proc.pop(opt, None) for opt in sim_opt_removal]
     
@@ -269,10 +284,15 @@ class xcelium(HammerSimTool, CadenceTool):
     if saif_opts["mode"] == "time":
       saif_start_time = saif_opts["start_time"]
       saif_end_time   = saif_opts["end_time"]
+    elif saif_opts["mode"] == "trigger":
+      self.logger.error("Trigger SAIF mode currently unsupported.")
     elif saif_opts["mode"] == "full":
       pass
+    elif saif_opts["mode"] == "trigger_raw":
+      saif_start_trigger_raw = saif_opts["start_trigger_raw"]
+      saif_end_trigger_raw   = saif_opts["end_trigger_raw"]
     else:
-      self.logger.warning("Bad saif_mode:${saif_mode}. Valid modes are time, full, or none. Defaulting to none.")
+      self.logger.warning("Bad saif_mode:${saif_mode}. Valid modes are time, full, trigger, or none. Defaulting to none.")
       saif_opts["mode"] = None
     
     if saif_opts["mode"] is not None: 
@@ -282,6 +302,8 @@ class xcelium(HammerSimTool, CadenceTool):
         saif_args = saif_args + f'dumpsaif -output ucli.saif -overwrite -scope {prefix} -start {stime.value_in_units("ns")}ns -stop{etime.value_in_units("ns")}ns'
       elif saif_opts["mode"] == "full":
         saif_args = saif_args + f"dumpsaif -output ucli.saif -overwrite -scope {prefix}"
+      elif saif_opts["mode"] == "trigger_raw":
+        saif_args = saif_args + f"dumpsaif -output ucli.saif -overwrite -scope {prefix} {saif_start_trigger_raw} {saif_end_trigger_raw}"
     return saif_args
 
   # Creates a tcl driver for simulation.
@@ -375,13 +397,17 @@ class xcelium(HammerSimTool, CadenceTool):
     return True
 
   def sim_xrun(self) -> bool:
-    
-    sim_opts = self.get_setting(f"{self.sim_input_prefix}.options", [])
+    sim_opts  = self.extract_sim_opts()[1]
+    sim_cmd_opts = self.get_setting(f"{self.sim_input_prefix}.options", [])
     sim_opts_removal  = ["tb_name", "input_files", "incdir"]
     xrun_opts_removal = ["enhanced_recompile"]
-    sim_opts = ('SIMULATION', sim_opts)
+    sim_cmd_opts = ('SIMULATION', sim_cmd_opts)
     
-    arg_file_path = self.generate_arg_file("xrun_sim.arg", "HAMMER-GEN XRUN SIM ARG FILE", [sim_opts],
+    if not sim_opts["execute_sim"]:
+      self.logger.warning("Not running any simulations because sim.inputs.execute_sim is unset.")
+      return True
+    
+    arg_file_path = self.generate_arg_file("xrun_sim.arg", "HAMMER-GEN XRUN SIM ARG FILE", [sim_cmd_opts],
                                            sim_opt_removal = sim_opts_removal,
                                            xrun_opt_removal = xrun_opts_removal)    
     args =[self.xcelium_bin]
