@@ -90,8 +90,8 @@ class xcelium(HammerSimTool, CadenceTool):
     self.output_saifs = []
     self.output_top_module = self.top_module
     self.output_tb_name = self.get_setting(f"{self.sim_input_prefix}.tb_name")
-    self.output_tb_dut = self.get_setting(f"{self.sim_input_prefix}.tb_dut")
-    self.output_level = self.get_setting(f"{self.sim_input_prefix}.level")
+    self.output_tb_dut  = self.get_setting(f"{self.sim_input_prefix}.tb_dut")
+    self.output_level   = self.get_setting(f"{self.sim_input_prefix}.level")
     
     if saif_opts ["mode"] is not None:
       self.output_saifs.append(os.path.join(self.run_dir, "ucli.saif"))
@@ -100,21 +100,22 @@ class xcelium(HammerSimTool, CadenceTool):
       self.output_waveforms.append(os.path.join(self.run_dir, f'{wav_opts["dump_name"]}.{extension}'))
 
     return True
-   
+  
   # Several extract functions are used to process mandatory keys into string options. 
   # Returns a raw input dictionary as well.
 
   def extract_xrun_opts(self) -> Tuple[Dict[str, str], Dict[str, str]]:
-    xrun_opts_def = [("enhanced_recompile", True),
-                     ("xmlibdirname", None),
-                     ("xmlibdirpath", None),
-                     ("simtmp", None),
-                     ("snapshot", None),
-                     ("global_access", False)]
+    xrun_opts_def = {"enhanced_recompile": True,
+                     "xmlibdirname": None,
+                     "xmlibdirpath": None,
+                     "simtmp": None,
+                     "snapshot": None,
+                     "global_access": False,
+                     "mce": False}
 
-    xrun_opts = {opt[0] : self.get_setting(f"{self.tool_config_prefix}.{opt[0]}", opt[1]) for opt in xrun_opts_def}
+    xrun_opts = self.get_settings_from_dict(xrun_opts_def ,key_prefix=self.tool_config_prefix)
     xrun_opts_proc = xrun_opts.copy()
-    bool_list = ["global_access", "enhanced_recompile"]
+    bool_list = ["global_access", "enhanced_recompile", "mce"]
     
     if xrun_opts_proc ["global_access"]: 
       xrun_opts_proc ["global_access"] = "+access+rcw"
@@ -126,23 +127,31 @@ class xcelium(HammerSimTool, CadenceTool):
     else:
       xrun_opts_proc ["enhanced_recompile"] = ""
 
+    if xrun_opts_proc ["mce"]:
+      xrun_opts_proc ["mce"] = "-mce"
+    else:
+      xrun_opts_proc ["mce"] = ""
+
     for opt, setting in xrun_opts_proc.items():
       if opt not in bool_list and setting is not None:
         xrun_opts_proc [opt] = f"-{opt} {setting}"
     
-    return xrun_opts_proc, xrun_opts
+    return xrun_opts_proc, xrun_opts 
   
   def extract_sim_opts(self) -> Tuple[Dict[str, str], Dict[str, str]]:
     abspath_input_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))
-    sim_opts_def =  [("tb_name", None),
-                     ("tb_dut", None),
-                     ("timescale", None),
-                     ("defines", None),
-                     ("incdir", None),
-                     ("execute_sim", True)]
-
-    sim_opts = {opt[0] : self.get_setting(f"{self.sim_input_prefix}.{opt[0]}", opt[1]) for opt in sim_opts_def}
+    sim_opts_def = {"tb_name": None,
+                    "tb_dut": None,
+                    "timescale": None,
+                    "defines": None,
+                    "incdir": None,
+                    "execute_sim": True,
+                    "compiler_cc_opts": None,
+                    "compiler_ld_opts": None}
     
+    # Defines and incdir are not strictly necessary.
+    optional_keys = ["defines", "incdir", "compiler_cc_opts", "compiler_ld_opts"]
+    sim_opts = self.get_settings_from_dict(sim_opts_def, self.sim_input_prefix, optional_keys)
     # Additional keys required if GL.
     if self.level.is_gatelevel(): 
       sim_opts ["gl_register_force_value"] = self.get_setting(f"{self.sim_input_prefix}.gl_register_force_value", 0)
@@ -154,28 +163,30 @@ class xcelium(HammerSimTool, CadenceTool):
     sim_opts_proc ["timescale"] = "-timescale " + sim_opts_proc ["timescale"]
     if sim_opts_proc ["defines"] is not None: sim_opts_proc ["defines"] = "\n".join(["-define " + define for define in sim_opts_proc ["defines"]]) 
     if sim_opts_proc ["incdir"] is not None:  sim_opts_proc ["incdir"]  = "\n".join(["-incdir " + incdir for incdir in sim_opts_proc ["incdir"]]) 
+    if sim_opts_proc ["compiler_cc_opts"] is not None: sim_opts_proc ["compiler_cc_opts"] = "\n".join(["-Wcc," + opt for opt in sim_opts_proc ["compiler_cc_opts"]]) 
+    if sim_opts_proc ["compiler_ld_opts"] is not None: sim_opts_proc ["compiler_ld_opts"] = "\n".join(["-Wld," + opt for opt in sim_opts_proc ["compiler_ld_opts"]]) 
 
     return sim_opts_proc, sim_opts
 
   def extract_waveform_opts(self) -> Tuple[Dict[str, str], Dict[str, str]]:
-    wav_opts_def = [("type", None),
-                    ("dump_name", "waveform"),
-                    ("compression", False),
-                    ("probe_paths", None),
-                    ("tcl_opts", None)]
+    wav_opts_def = {"type": None,
+                    "dump_name": "waveform",
+                    "compression": False,
+                    "probe_paths": None,
+                    "tcl_opts": None,
+                    "shm_incr": "5G"}
     
-    # Because key-driven waveform spec is optional, return none-type dict by default.
+    # Because key-driven waveform spec is optional, should return none-type dict by default.
     wav_opts = {}
     if self.get_setting(f"{self.sim_waveform_prefix}.type") is not None:
-      wav_opts = {opt[0] : self.get_setting(f"{self.sim_waveform_prefix}.{opt[0]}", opt[1]) for opt in wav_opts_def}
-    
+      optional_keys = ["shm_incr"]
+      wav_opts = self.get_settings_from_dict(wav_opts_def, self.sim_waveform_prefix, optional_keys)
       wav_opts_proc = wav_opts.copy()
+      print("problems")
+      print(wav_opts)
       wav_opts_proc ["compression"] = "-compress" if wav_opts ["compression"] else ""
       if wav_opts_proc ["probe_paths"] is not None: wav_opts_proc ["probe_paths"] = "\n".join(["probe -create " + path for path in wav_opts_proc ["probe_paths"]]) 
       if wav_opts_proc ["tcl_opts"] is not None:    wav_opts_proc ["tcl_opts"]    = "\n".join(opt for opt in wav_opts_proc ["tcl_opts"]) 
-      if wav_opts_proc ["type"] == "shm":
-        wav_opts_proc["shm_incr"] = self.get_setting(f"{self.sim_waveform_prefix}.shm_incr")
-        
     else: 
       wav_opts = {"type": None}
       wav_opts_proc = wav_opts.copy()
@@ -183,9 +194,10 @@ class xcelium(HammerSimTool, CadenceTool):
     return wav_opts_proc, wav_opts
 
   def extract_saif_opts(self) -> Dict[str, str]:
+
     saif_opts = {}
     saif_opts ["mode"] = self.get_setting(f"{self.sim_input_prefix}.saif.mode")
-    
+
     if saif_opts ["mode"] == "time":
       saif_opts ["start_time"] = self.get_setting(f"{self.sim_input_prefix}.saif.start_time")
       saif_opts ["end_time"]   = self.get_setting(f"{self.sim_input_prefix}.saif.end_time")
@@ -233,6 +245,14 @@ class xcelium(HammerSimTool, CadenceTool):
     f.close()  
     
     return arg_path  
+  
+  # Convenience function invoked when multicore options are needed.
+  def generate_mc_cmd(self) -> str:
+    opts = ""
+    num_threads=int(self.get_setting("vlsi.core.max_threads")) - 1
+    opts = opts + f"-mce_build_thread_count {num_threads} \n"
+    opts = opts + f"-mce_sim_thread_count {num_threads} \n"
+    return opts
   
   # Deposit values
   # Try to maintain some parity with vcs plugin.
@@ -356,9 +376,11 @@ class xcelium(HammerSimTool, CadenceTool):
       return False
 
     # Gather complation-only options
+    xrun_opts     = self.extract_xrun_opts()[1]
     compile_opts  = self.get_setting(f"{self.tool_config_prefix}.compile_opts", [])       
     compile_opts.append("-logfile xrun_compile.log")
-    compile_opts = ('COMPILE', compile_opts)
+    if xrun_opts["mce"]: compile_opts.append(self.generate_mc_cmd())
+    compile_opts  = ('COMPILE', compile_opts)
     
     arg_file_path = self.generate_arg_file("xrun_compile.arg", "HAMMER-GEN XRUN COMPILE ARG FILE", [compile_opts])
     args =[self.xcelium_bin]
@@ -370,6 +392,7 @@ class xcelium(HammerSimTool, CadenceTool):
     return True
     
   def elaborate_xrun(self) -> bool: 
+    xrun_opts = self.extract_xrun_opts()[1]
     sim_opts  = self.extract_sim_opts()[1]
     elab_opts = self.get_setting(f"{self.tool_config_prefix}.elab_opts", [])
     elab_opts.append("-logfile xrun_elab.log")
@@ -389,8 +412,10 @@ class xcelium(HammerSimTool, CadenceTool):
     else:
       elab_opts.append("-notimingchecks")
       elab_opts.append("-delay_mode zero")
+      
+    if xrun_opts["mce"]: elab_opts.append(self.generate_mc_cmd())
     elab_opts = ('ELABORATION', elab_opts)
-    
+        
     arg_file_path = self.generate_arg_file("xrun_elab.arg", "HAMMER-GEN XRUN ELAB ARG FILE", [elab_opts])
     args =[self.xcelium_bin]
     args.append(f"-elaborate -f {arg_file_path}")
@@ -402,7 +427,7 @@ class xcelium(HammerSimTool, CadenceTool):
     sim_opts  = self.extract_sim_opts()[1]
     sim_cmd_opts = self.get_setting(f"{self.sim_input_prefix}.options", [])
     sim_opts_removal  = ["tb_name", "input_files", "incdir"]
-    xrun_opts_removal = ["enhanced_recompile"]
+    xrun_opts_removal = ["enhanced_recompile", "mce"]
     sim_cmd_opts = ('SIMULATION', sim_cmd_opts)
     
     if not sim_opts["execute_sim"]:

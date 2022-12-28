@@ -25,15 +25,10 @@ sim.xcelium:
   snapshot: null
   # If true, enables +rwc access globally. Makes debug easier but slows performance.
   global_access: False
-
-  # 
-  mce_build_cpu_configuration: single-socket
-
-  mce_build_thread_count:
-  # 
-  mce_sim_cpu_configuration: single-socket
-  #
-  mce_sim_thread_count: single-socket
+  # If true, enable multicore (similar to sim.vcs.fgp)
+  # By default it should not be TRUE as there are numerous potential limitations in tcl,
+  # build switches, and general simulator features.
+  mce: False
 
   compile_opts: null
   elab_opts: null

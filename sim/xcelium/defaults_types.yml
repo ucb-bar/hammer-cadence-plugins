@@ -17,6 +17,8 @@ sim.xcelium:
   snapshot: null
   # If true, enables +rwc access globally. Makes debug easier but slows performance.
   global_access: False
+  # If true, enable multicore support.
+  mce: bool
 
   compile_opts: null
   elab_opts: null
