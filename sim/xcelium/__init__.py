@@ -182,8 +182,6 @@ class xcelium(HammerSimTool, CadenceTool):
       optional_keys = ["shm_incr"]
       wav_opts = self.get_settings_from_dict(wav_opts_def, self.sim_waveform_prefix, optional_keys)
       wav_opts_proc = wav_opts.copy()
-      print("problems")
-      print(wav_opts)
       wav_opts_proc ["compression"] = "-compress" if wav_opts ["compression"] else ""
       if wav_opts_proc ["probe_paths"] is not None: wav_opts_proc ["probe_paths"] = "\n".join(["probe -create " + path for path in wav_opts_proc ["probe_paths"]]) 
       if wav_opts_proc ["tcl_opts"] is not None:    wav_opts_proc ["tcl_opts"]    = "\n".join(opt for opt in wav_opts_proc ["tcl_opts"]) 
@@ -214,6 +212,19 @@ class xcelium(HammerSimTool, CadenceTool):
     wrapper.write(f"# CREATED AT {now} \n")
     wrapper.write("# "+"="*39+"\n")
 
+  # LSF submit command 
+  # Try to maintain some parity with vcs plugin. 
+  def update_submit_options(self)->None:
+    if isinstance(self.submit_command, HammerLSFSubmitCommand):
+        settings = self.submit_command.settings._asdict()
+        if self.submit_command.settings.num_cpus is not None:
+          settings['num_cpus'] = self.submit_command.settings.num_cpus
+        else: 
+          settings['num_cpus'] = 1
+        self.submit_command.settings = HammerLSFSettings(**settings)
+    else:
+      pass
+    
   # Create an xrun.arg file
   def generate_arg_file(self, 
                         file_name: str, 
@@ -386,6 +397,7 @@ class xcelium(HammerSimTool, CadenceTool):
     args =[self.xcelium_bin]
     args.append(f"-compile -f {arg_file_path}")
     
+    self.update_submit_options()  
     self.run_executable(args, cwd=self.run_dir)
     HammerVLSILogging.enable_colour = True
     HammerVLSILogging.enable_tag = True
@@ -420,6 +432,7 @@ class xcelium(HammerSimTool, CadenceTool):
     args =[self.xcelium_bin]
     args.append(f"-elaborate -f {arg_file_path}")
     
+    self.update_submit_options()
     self.run_executable(args, cwd=self.run_dir)
     return True
 
@@ -441,6 +454,7 @@ class xcelium(HammerSimTool, CadenceTool):
     args.append(f"-R -f {arg_file_path} -input {self.sim_tcl_file}")
 
     self.generate_sim_tcl() 
+    self.update_submit_options()
     self.run_executable(args, cwd=self.run_dir)
     return True
 
