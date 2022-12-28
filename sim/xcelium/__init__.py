@@ -163,7 +163,7 @@ class xcelium(HammerSimTool, CadenceTool):
     sim_opts_proc ["timescale"] = "-timescale " + sim_opts_proc ["timescale"]
     if sim_opts_proc ["defines"] is not None: sim_opts_proc ["defines"] = "\n".join(["-define " + define for define in sim_opts_proc ["defines"]]) 
     if sim_opts_proc ["incdir"] is not None:  sim_opts_proc ["incdir"]  = "\n".join(["-incdir " + incdir for incdir in sim_opts_proc ["incdir"]]) 
-    if sim_opts_proc ["compiler_cc_opts"] is not None: sim_opts_proc ["compiler_cc_opts"] = "\n".join(["-Wcc," + opt for opt in sim_opts_proc ["compiler_cc_opts"]]) 
+    if sim_opts_proc ["compiler_cc_opts"] is not None: sim_opts_proc ["compiler_cc_opts"] = "\n".join(["-Wcxx," + opt for opt in sim_opts_proc ["compiler_cc_opts"]]) 
     if sim_opts_proc ["compiler_ld_opts"] is not None: sim_opts_proc ["compiler_ld_opts"] = "\n".join(["-Wld," + opt for opt in sim_opts_proc ["compiler_ld_opts"]]) 
 
     return sim_opts_proc, sim_opts

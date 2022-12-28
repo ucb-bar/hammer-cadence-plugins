@@ -14,11 +14,11 @@ sim.xcelium:
   # Specifies alternative scratch location for sims.
   simtmp: str
   # Create an elaborated snapshot of specified name.
-  snapshot: null
+  snapshot: str
   # If true, enables +rwc access globally. Makes debug easier but slows performance.
-  global_access: False
+  global_access: bool
   # If true, enable multicore support.
   mce: bool
 
-  compile_opts: null
-  elab_opts: null
+  compile_opts: list[str]
+  elab_opts: list[str]
