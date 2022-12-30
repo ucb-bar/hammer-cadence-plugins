@@ -8,17 +8,17 @@ sim.xcelium:
   # If true, enable fast recompilation. 
   enhanced_recompile: bool
   # Specifies alternative name for xcelium.d working directory
-  xmlibdirname: str
+  xmlibdirname: Optional[str]
   # Specifies alternative location for xcelium.d working directory
-  xmlibdirpath: str
+  xmlibdirpath: Optional[str]
   # Specifies alternative scratch location for sims.
-  simtmp: str
+  simtmp: Optional[str]
   # Create an elaborated snapshot of specified name.
-  snapshot: str
+  snapshot: Optional[str]
   # If true, enables +rwc access globally. Makes debug easier but slows performance.
   global_access: bool
   # If true, enable multicore support.
   mce: bool
 
-  compile_opts: list[str]
-  elab_opts: list[str]
+  compile_opts: Optional[list[str]]
+  elab_opts: Optional[list[str]]

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # HAMMER-VLSI PLUGIN, XCELIUM 
 # Notes: This plugin sets up xrun to execute in a three-step xrun invocation.
@@ -22,15 +23,13 @@ import io
 import sys
 from typing import Dict, List, Optional, Tuple
 
-import hammer_utils
-import hammer_tech
-from hammer_tech import HammerTechnologyUtils
-from hammer_vlsi import FlowLevel, TimeValue
-from hammer_vlsi import HammerSimTool, HammerToolStep, HammerLSFSubmitCommand, HammerLSFSettings
-from hammer_logging import HammerVLSILogging
-
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+import hammer.utils
+import hammer.tech as hammer_tech
+from hammer.tech import HammerTechnologyUtils
+from hammer.vlsi import FlowLevel, TimeValue
+from hammer.vlsi import HammerSimTool, HammerToolStep, HammerLSFSubmitCommand, HammerLSFSettings
+from hammer.logging import HammerVLSILogging
+from hammer.cadence.tool import CadenceTool
 
 class xcelium(HammerSimTool, CadenceTool):
 

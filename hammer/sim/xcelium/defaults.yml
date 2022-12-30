@@ -29,7 +29,8 @@ sim.xcelium:
   # By default it should not be TRUE as there are numerous potential limitations in tcl,
   # build switches, and general simulator features.
   mce: False
-
+  # Opts to access compilation step in xcelium.
   compile_opts: null
+  # Opts to access elaboration step in xcelium.
   elab_opts: null
 
