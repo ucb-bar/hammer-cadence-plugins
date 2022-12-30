@@ -200,8 +200,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # Set up libraries.
         # Read timing libraries.
         mmmc_path = os.path.join(self.run_dir, "mmmc.tcl")
-        with open(mmmc_path, "w") as f:
-            f.write(self.generate_mmmc_script())
+        self.write_contents_to_path(self.generate_mmmc_script(), mmmc_path)
         verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
         if self.hierarchical_mode.is_nonleaf_hierarchical():
@@ -356,9 +355,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         # Create synthesis script.
         syn_tcl_filename = os.path.join(self.run_dir, "syn.tcl")
-
-        with open(syn_tcl_filename, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), syn_tcl_filename)
 
         # Build args.
         args = [

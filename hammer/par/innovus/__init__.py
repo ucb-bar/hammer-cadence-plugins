@@ -264,8 +264,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Read timing libraries.
         mmmc_path = os.path.join(self.run_dir, "mmmc.tcl")
-        with open(mmmc_path, "w") as f:
-            f.write(self.generate_mmmc_script())
+        self.write_contents_to_path(self.generate_mmmc_script(), mmmc_path)
         verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
         # Read netlist.
@@ -315,8 +314,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def floorplan_design(self) -> bool:
         floorplan_tcl = os.path.join(self.run_dir, "floorplan.tcl")
-        with open(floorplan_tcl, "w") as f:
-            f.write("\n".join(self.create_floorplan_tcl()))
+        self.write_contents_to_path("\n".join(self.create_floorplan_tcl()), floorplan_tcl)
         self.verbose_append("source -echo -verbose {}".format(floorplan_tcl))
         return True
 
@@ -476,8 +474,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def power_straps(self) -> bool:
         """Place the power straps for the design."""
         power_straps_tcl = os.path.join(self.run_dir, "power_straps.tcl")
-        with open(power_straps_tcl, "w") as f:
-            f.write("\n".join(self.create_power_straps_tcl()))
+        self.write_contents_to_path("\n".join(self.create_power_straps_tcl()), power_straps_tcl)
         self.verbose_append("source -echo -verbose {}".format(power_straps_tcl))
         return True
 
@@ -817,18 +814,16 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Create par script.
         par_tcl_filename = os.path.join(self.run_dir, "par.tcl")
-        with open(par_tcl_filename, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), par_tcl_filename)
 
         # Make sure that generated-scripts exists.
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
         # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
         self.output.clear()
-        with open(self.open_chip_tcl, "w") as f:
-            assert super().do_pre_steps(self.first_step)
-            self.append("read_db latest")
-            f.write("\n".join(self.output))
+        assert super().do_pre_steps(self.first_step)
+        self.append("read_db latest")
+        self.write_contents_to_path("\n".join(self.output), self.open_chip_tcl)
 
         with open(self.open_chip_script, "w") as f:
             f.write("""#!/bin/bash

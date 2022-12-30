@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any, Callable
 import os
 import json
 import copy
+import inspect
 
 from hammer.vlsi import HammerTool, HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, ILMStruct
 from hammer.vlsi.constraints import MMMCCorner, MMMCCornerType
@@ -41,6 +42,21 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
         if "_" in version:
             minor_version = int(version.split("_")[1][3:])
         return main_version * 100 + minor_version
+
+    @property
+    def header(self) -> str:
+        """
+        Header for all generated Tcl scripts
+        """
+        header_text = """
+        # --------------------------------------------------------------------------------
+        # This script was written and developed by HAMMER at UC Berkeley; however, the
+        # underlying commands and reports are copyrighted by Cadence. We thank Cadence for
+        # granting permission to share our research to help promote and foster the next
+        # generation of innovators.
+        # --------------------------------------------------------------------------------
+        """
+        return inspect.cleandoc(header_text)
 
     def get_timing_libs(self, corner: Optional[MMMCCorner] = None) -> str:
         """
@@ -85,14 +101,12 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
 
         # Generate constraints
         clock_constraints_fragment = os.path.join(self.run_dir, "clock_constraints_fragment.sdc")
-        with open(clock_constraints_fragment, "w") as f:
-            f.write(self.sdc_clock_constraints)
+        self.write_contents_to_path(self.sdc_clock_constraints, clock_constraints_fragment)
         sdc_files.append(clock_constraints_fragment)
 
         # Generate port constraints.
         pin_constraints_fragment = os.path.join(self.run_dir, "pin_constraints_fragment.sdc")
-        with open(pin_constraints_fragment, "w") as f:
-            f.write(self.sdc_pin_constraints)
+        self.write_contents_to_path(self.sdc_pin_constraints, pin_constraints_fragment)
         sdc_files.append(pin_constraints_fragment)
 
         return sdc_files
@@ -295,8 +309,7 @@ if {{ {get_db_str} ne "" }} {{
 
         # Write the power spec contents to file and include it
         power_spec_file = os.path.join(self.run_dir, "power_spec.{tpe}".format(tpe=power_spec_type))
-        with open(power_spec_file, "w") as f:
-            f.write(power_spec_contents)
+        self.write_contents_to_path(power_spec_contents, power_spec_file)
 
         return power_spec_file
 

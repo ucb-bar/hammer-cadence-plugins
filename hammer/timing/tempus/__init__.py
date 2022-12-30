@@ -100,8 +100,7 @@ class Tempus(HammerTimingTool, CadenceTool):
         # TODO: support non-MMMC mode, use standalone SDC instead
         # TODO: read AOCV or SOCV+LVF libraries if available
         mmmc_path = os.path.join(self.run_dir, "mmmc.tcl")
-        with open(mmmc_path, "w") as f:
-            f.write(self.generate_mmmc_script())
+        self.write_contents_to_path(self.generate_mmmc_script(), mmmc_path)
         verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
         # Read physical LEFs (optional in Tempus)
@@ -228,10 +227,9 @@ class Tempus(HammerTimingTool, CadenceTool):
         self.output.clear()
         self.create_enter_script()
         open_db_tcl = os.path.join(generated_scripts_dir, "open_db.tcl")
-        with open(open_db_tcl, "w") as f:
-            assert super().do_pre_steps(self.first_step)
-            self.append("read_db latest")
-            f.write("\n".join(self.output))
+        assert super().do_pre_steps(self.first_step)
+        self.append("read_db latest")
+        self.write_contents_to_path("\n".join(self.output), open_db_tcl)
         open_db_script = os.path.join(generated_scripts_dir, "open_db")
         with open(open_db_script, "w") as f:
             f.write("""#!/bin/bash
@@ -249,8 +247,7 @@ class Tempus(HammerTimingTool, CadenceTool):
 
         # Write main dofile
         timing_script = os.path.join(self.run_dir, "timing.tcl")
-        with open(timing_script, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), timing_script)
 
         # Build args
         # TODO: enable Signoff ECO with -tso (-eco?) option
