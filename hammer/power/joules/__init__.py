@@ -241,9 +241,7 @@ class Joules(HammerPowerTool, CadenceTool):
 
         # Create power analysis script
         joules_tcl_filename = os.path.join(self.run_dir, "joules.tcl")
-
-        with open(joules_tcl_filename, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), joules_tcl_filename)
 
         # Build args
         args = [

@@ -250,8 +250,7 @@ class Conformal(HammerFormalTool, CadenceTool):
 
         # Write main dofile
         dofile = os.path.join(self.run_dir, f"{self.check}.tcl")
-        with open(dofile, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), dofile)
 
         # Build args
         args = self.start_cmd

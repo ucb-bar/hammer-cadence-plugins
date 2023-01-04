@@ -261,8 +261,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                     ts_output.append("write_pg_library -out_dir {}".format(os.path.join(self.stdcell_lib_dir, corner.name)))
 
             ts_output.append("exit")
-            with open(self.tech_stdcell_pgv_tcl, "w") as f:
-                f.write("\n".join(ts_output))
+            self.write_contents_to_path("\n".join(ts_output), self.tech_stdcell_pgv_tcl)
             self.gen_tech_stdcell_pgv = True
             self.ran_tech_stdcell_pgv = True
         else:
@@ -386,8 +385,7 @@ class Voltus(HammerPowerTool, CadenceTool):
                         m_output.append("write_pg_library -out_dir {}".format(os.path.join(self.macro_lib_dir, corner.name)))
 
                 m_output.append("exit")
-                with open(self.macro_pgv_tcl, "w") as f:
-                    f.write("\n".join(m_output))
+                self.write_contents_to_path("\n".join(m_output), self.macro_pgv_tcl)
                 self.gen_macro_pgv = True
                 self.ran_macro_pgv = True
             else:
@@ -728,9 +726,7 @@ class Voltus(HammerPowerTool, CadenceTool):
 
         # Create power analysis script
         power_tcl_filename = os.path.join(self.run_dir, "power.tcl")
-
-        with open(power_tcl_filename, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), power_tcl_filename)
 
         # Build args
         base_args = [
