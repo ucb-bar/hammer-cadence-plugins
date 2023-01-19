@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hammer-cadence-plugins"
-version = "0.0.1"
+version = "1.0.0"
 description = "Cadence tool plugins for hammer-vlsi"
 authors = ["Colin Schmidt <colin.schmidt@sifive.com>", "Edward Wang <edward.c.wang@compdigitec.com>", "John Wright <johnwright@eecs.berkeley.edu>"]
 maintainers = ["Harrison Liew <harrisonliew@berkeley.edu>", "Daniel Grubb <dpgrubb@berkeley.edu>"]
@@ -13,8 +13,8 @@ packages = [
 [tool.poetry.scripts]
 
 [tool.poetry.dependencies]
-python = "^3.8"
-#hammer-vlsi = "^0.0.1"
+python = "^3.9"
+#hammer-vlsi = "^1.0.0"
 #hammer-vlsi = {path = "../hammer", develop = true}
 
 [tool.poetry.dev-dependencies]
@@ -36,7 +36,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.tox]
 legacy_tox_ini = """
 [tox]
-envlist = py38,py39,py310
+envlist = py39,py310
 isolated_build = True
 
 [testenv]
