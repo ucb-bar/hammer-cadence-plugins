@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#
 #  hammer-vlsi plugin for Cadence Innovus.
 #
 #  See LICENSE for licence details.
@@ -12,20 +9,17 @@ from itertools import product
 import os
 import errno
 
-from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
+from hammer.utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
+from hammer.vlsi import HammerTool, HammerPlaceAndRouteTool, HammerToolStep, HammerToolHookAction, \
     PlacementConstraintType, HierarchicalMode, ILMStruct, ObstructionType, Margins, Supply, PlacementConstraint, MMMCCornerType
-from hammer_vlsi.units import CapacitanceValue
-from hammer_logging import HammerVLSILogging
-import hammer_tech
-from hammer_tech import RoutingDirection, Metal
-import specialcells
-from specialcells import CellType, SpecialCell
+from hammer.vlsi.units import CapacitanceValue
+from hammer.logging import HammerVLSILogging
+import hammer.tech as hammer_tech
+from hammer.tech import RoutingDirection, Metal
+import hammer.tech.specialcells
+from hammer.tech.specialcells import CellType, SpecialCell
 from decimal import Decimal
-
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.cadence.tool import CadenceTool
 
 # Notes: camelCase commands are the old syntax (deprecated)
 # snake_case commands are the new/common UI syntax.
@@ -270,8 +264,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Read timing libraries.
         mmmc_path = os.path.join(self.run_dir, "mmmc.tcl")
-        with open(mmmc_path, "w") as f:
-            f.write(self.generate_mmmc_script())
+        self.write_contents_to_path(self.generate_mmmc_script(), mmmc_path)
         verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
         # Read netlist.
@@ -321,8 +314,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
     def floorplan_design(self) -> bool:
         floorplan_tcl = os.path.join(self.run_dir, "floorplan.tcl")
-        with open(floorplan_tcl, "w") as f:
-            f.write("\n".join(self.create_floorplan_tcl()))
+        self.write_contents_to_path("\n".join(self.create_floorplan_tcl()), floorplan_tcl)
         self.verbose_append("source -echo -verbose {}".format(floorplan_tcl))
         return True
 
@@ -372,7 +364,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
         tap_cells = self.technology.get_special_cell_by_type(CellType.TapCell)
 
         if len(tap_cells) == 0:
-            self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook.")
+            self.logger.warning("Tap cells are improperly defined in the tech plugin and will not be added. This step should be overridden with a user hook or tapcell special cell should be added to the tech.json.")
             return True
 
         tap_cell = tap_cells[0].name[0]
@@ -384,9 +376,6 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             self.append("add_well_taps -cell_interval {INTERVAL} -in_row_offset {OFFSET}".format(INTERVAL=interval, OFFSET=offset))
         except KeyError:
             pass
-        finally:
-            self.logger.warning(
-                "You have not overridden place_tap_cells. By default this step adds a simple set of tapcells or does nothing; you will have trouble with power strap creation later.")
         return True
 
     def place_pins(self) -> bool:
@@ -443,7 +432,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                         ex=fp_llx if pin.side != "right" else fp_urx,
                         ey=fp_lly if pin.side != "top" else fp_ury
                     )
-                    if len(pin.layers) > 1:
+                    if pin.layers and len(pin.layers) > 1:
                         pattern_arg = "-pattern fill_optimised"
                     else:
                         pattern_arg = "-spread_type range"
@@ -485,8 +474,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def power_straps(self) -> bool:
         """Place the power straps for the design."""
         power_straps_tcl = os.path.join(self.run_dir, "power_straps.tcl")
-        with open(power_straps_tcl, "w") as f:
-            f.write("\n".join(self.create_power_straps_tcl()))
+        self.write_contents_to_path("\n".join(self.create_power_straps_tcl()), power_straps_tcl)
         self.verbose_append("source -echo -verbose {}".format(power_straps_tcl))
         return True
 
@@ -678,7 +666,7 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             else:
                 self.logger.error(
                     "par.inputs.gds_precision value of \"%s\" must be one of %s" %(
-                        gds_precision, ', '.join(valid_values)));
+                        gds_precision, ', '.join([str(x) for x in valid_values])));
                 return False
         # "auto", i.e. not "manual", means not specifying anything extra.
 
@@ -826,18 +814,16 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
 
         # Create par script.
         par_tcl_filename = os.path.join(self.run_dir, "par.tcl")
-        with open(par_tcl_filename, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), par_tcl_filename)
 
         # Make sure that generated-scripts exists.
         os.makedirs(self.generated_scripts_dir, exist_ok=True)
 
         # Create open_chip script pointing to latest (symlinked to post_<last ran step>).
         self.output.clear()
-        with open(self.open_chip_tcl, "w") as f:
-            assert super().do_pre_steps(self.first_step)
-            self.append("read_db latest")
-            f.write("\n".join(self.output))
+        assert super().do_pre_steps(self.first_step)
+        self.append("read_db latest")
+        self.write_contents_to_path("\n".join(self.output), self.open_chip_tcl)
 
         with open(self.open_chip_script, "w") as f:
             f.write("""#!/bin/bash

@@ -13,14 +13,12 @@ import os
 import errno
 import json
 
-from hammer_utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
-from hammer_vlsi import HammerPowerTool, HammerToolStep, MMMCCornerType, FlowLevel, TimeValue
-from hammer_logging import HammerVLSILogging
-import hammer_tech
+from hammer.utils import get_or_else, optional_map, coerce_to_grid, check_on_grid, lcm_grid
+from hammer.vlsi import HammerPowerTool, HammerToolStep, MMMCCornerType, FlowLevel, TimeValue
+from hammer.logging import HammerVLSILogging
+import hammer.tech as hammer_tech
 
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.cadence.tool import CadenceTool
 
 
 class Joules(HammerPowerTool, CadenceTool):
@@ -243,9 +241,7 @@ class Joules(HammerPowerTool, CadenceTool):
 
         # Create power analysis script
         joules_tcl_filename = os.path.join(self.run_dir, "joules.tcl")
-
-        with open(joules_tcl_filename, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), joules_tcl_filename)
 
         # Build args
         args = [

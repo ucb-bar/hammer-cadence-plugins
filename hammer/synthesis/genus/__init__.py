@@ -1,29 +1,24 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#
 #  hammer-vlsi plugin for Cadence Genus.
 #
 #  See LICENSE for licence details.
 
-from hammer_vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
-from hammer_utils import VerilogUtils
-from hammer_vlsi import HammerSynthesisTool
-from hammer_logging import HammerVLSILogging
-from hammer_vlsi import MMMCCornerType
-import hammer_tech
+from hammer.vlsi import HammerTool, HammerToolStep, HammerToolHookAction, HierarchicalMode
+from hammer.utils import VerilogUtils
+from hammer.vlsi import HammerSynthesisTool
+from hammer.logging import HammerVLSILogging
+from hammer.vlsi import MMMCCornerType
+import hammer.tech as hammer_tech
 
 from typing import Dict, List, Any, Optional
 
-import specialcells
-from specialcells import CellType, SpecialCell
+import hammer.tech.specialcells
+from hammer.tech.specialcells import CellType, SpecialCell
 
 import os
 import json
 from collections import Counter
 
-import sys
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.cadence.tool import CadenceTool
 
 
 class Genus(HammerSynthesisTool, CadenceTool):
@@ -205,8 +200,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
         # Set up libraries.
         # Read timing libraries.
         mmmc_path = os.path.join(self.run_dir, "mmmc.tcl")
-        with open(mmmc_path, "w") as f:
-            f.write(self.generate_mmmc_script())
+        self.write_contents_to_path(self.generate_mmmc_script(), mmmc_path)
         verbose_append("read_mmmc {mmmc_path}".format(mmmc_path=mmmc_path))
 
         if self.hierarchical_mode.is_nonleaf_hierarchical():
@@ -291,7 +285,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
                 self.logger.warning("Hi and Lo tiecells are unspecified or improperly specified and will not be added during synthesis.")
                 return True
             tie_hi_cells = tie_hilo_cells
-            tie_lo_cells = tie_hilo_cells            
+            tie_lo_cells = tie_hilo_cells
 
         tie_hi_cell = tie_hi_cells[0].name[0]
         tie_lo_cell = tie_lo_cells[0].name[0]
@@ -361,9 +355,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
         # Create synthesis script.
         syn_tcl_filename = os.path.join(self.run_dir, "syn.tcl")
-
-        with open(syn_tcl_filename, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), syn_tcl_filename)
 
         # Build args.
         args = [

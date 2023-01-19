@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-#
 #  hammer-vlsi plugin for Cadence Conformal.
 #
 #  See LICENSE for licence details.
@@ -11,12 +8,10 @@ import os
 import sys
 import errno
 
-from hammer_vlsi import HammerTool, HammerFormalTool, HammerToolStep, HammerToolHookAction
-from hammer_logging import HammerVLSILogging
-import hammer_tech
-
-sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),"../../common"))
-from tool import CadenceTool
+from hammer.vlsi import HammerTool, HammerFormalTool, HammerToolStep, HammerToolHookAction
+from hammer.logging import HammerVLSILogging
+import hammer.tech as hammer_tech
+from hammer.cadence.tool import CadenceTool
 
 # Notes: Tcl mode is enabled for harmonization with other Cadence tools and additional Tcl functionality.
 # There is a minor performance hit with database operations vs. native language.
@@ -255,8 +250,7 @@ class Conformal(HammerFormalTool, CadenceTool):
 
         # Write main dofile
         dofile = os.path.join(self.run_dir, f"{self.check}.tcl")
-        with open(dofile, "w") as f:
-            f.write("\n".join(self.output))
+        self.write_contents_to_path("\n".join(self.output), dofile)
 
         # Build args
         args = self.start_cmd
