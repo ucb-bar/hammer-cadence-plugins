@@ -321,8 +321,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
     def place_bumps(self) -> bool:
         bumps = self.get_bumps()
         if bumps is not None:
-            bump_array_width = Decimal(str((bumps.x - 1) * bumps.pitch))
-            bump_array_height = Decimal(str((bumps.y - 1) * bumps.pitch))
+            bump_array_width = Decimal(str((bumps.x - 1) * bumps.pitch_x))
+            bump_array_height = Decimal(str((bumps.y - 1) * bumps.pitch_y))
             fp_consts = self.get_placement_constraints()
             fp_width = Decimal(0)
             fp_height = Decimal(0)
@@ -333,8 +333,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
             if fp_width == 0 or fp_height == 0:
                 raise ValueError("Floorplan does not specify a TopLevel constraint or it has no dimensions")
             # Center bump array in the middle of floorplan
-            bump_offset_x = (Decimal(str(fp_width)) - bump_array_width) / 2
-            bump_offset_y = (Decimal(str(fp_height)) - bump_array_height) / 2
+            bump_offset_x = (Decimal(str(fp_width)) - bump_array_width) / 2 + bumps.global_x_offset
+            bump_offset_y = (Decimal(str(fp_height)) - bump_array_height) / 2+ bumps.global_y_offset
             power_ground_nets = list(map(lambda x: x.name, self.get_independent_power_nets() + self.get_independent_ground_nets()))
             # TODO: Fix this once the stackup supports vias ucb-bar/hammer#354
             block_layer = self.get_setting("vlsi.technology.bump_block_cut_layer")  # type: str
@@ -343,8 +343,8 @@ class Innovus(HammerPlaceAndRouteTool, CadenceTool):
                     cell = bump.custom_cell if bump.custom_cell is not None else bumps.cell,
                     c = bump.x,
                     r = bump.y,
-                    x = bump_offset_x + Decimal(str(bump.x - 1)) * Decimal(str(bumps.pitch)),
-                    y = bump_offset_y + Decimal(str(bump.y - 1)) * Decimal(str(bumps.pitch))))
+                    x = bump_offset_x + Decimal(str(bump.x - 1)) * Decimal(str(bumps.pitch_x)),
+                    y = bump_offset_y + Decimal(str(bump.y - 1)) * Decimal(str(bumps.pitch_y))))
                 if not bump.no_connect:
                     if bump.name in power_ground_nets:
                         self.append("select_bumps -bumps \"Bump_{x}.{y}\"".format(x=bump.x, y=bump.y))
