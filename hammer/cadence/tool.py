@@ -61,16 +61,19 @@ class CadenceTool(HasSDCSupport, HasCPFSupport, HasUPFSupport, TCLTool, HammerTo
     def get_timing_libs(self, corner: Optional[MMMCCorner] = None) -> str:
         """
         Helper function to get the list of ASCII timing .lib files in space separated format.
-        Note that Cadence tools support ECSM, so we can use the ECSM-based filter.
+        Uses a preference filter to collect NLDM, ECSM, or CCS libraries.
 
         :param corner: Optional corner to consider. If supplied, this will use filter_for_mmmc to select libraries that
         match a given corner (voltage/temperature).
         :return: List of lib files separated by spaces
         """
+        
+        lib_pref = self.get_setting("vlsi.technology.timing_lib_pref")  # type: List[Dict[str, Any]]
+
         pre_filters = optional_map(corner, lambda c: [self.filter_for_mmmc(voltage=c.voltage,
                                                                            temp=c.temp)])  # type: Optional[List[Callable[[hammer_tech.Library],bool]]]
 
-        lib_args = self.technology.read_libs([hammer_tech.filters.timing_lib_with_ecsm_filter],
+        lib_args = self.technology.read_libs([hammer_tech.filters.get_timing_lib_with_preference(lib_pref)],
                                              hammer_tech.HammerTechnologyUtils.to_plain_item,
                                              extra_pre_filters=pre_filters)
         return " ".join(lib_args)
