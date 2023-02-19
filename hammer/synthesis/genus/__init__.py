@@ -222,11 +222,12 @@ class Genus(HammerSynthesisTool, CadenceTool):
         ))
 
         # Load input files and check that they are all Verilog.
-        if not self.check_input_files([".v", ".sv"]):
+        if not self.check_input_files([".v", ".sv", ".vh", ".svh", ".vhh"]):
             return False
+                    
         # We are switching working directories and Genus still needs to find paths.
         abspath_input_files = list(map(lambda name: os.path.join(os.getcwd(), name), self.input_files))  # type: List[str]
-
+        
         # If we are in hierarchical, we need to remove hierarchical sub-modules/sub-blocks.
         if self.hierarchical_mode.is_nonleaf_hierarchical():
             abspath_input_files = list(map(self.remove_hierarchical_submodules_from_file, abspath_input_files))
