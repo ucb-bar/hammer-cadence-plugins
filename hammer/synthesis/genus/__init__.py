@@ -85,16 +85,18 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     @property
     def steps(self) -> List[HammerToolStep]:
-        return self.make_steps_from_methods([
+        steps_methods = [
             self.init_environment,
-            self.retime_modules,
             self.syn_generic,
             self.syn_map,
             self.add_tieoffs,
             self.write_regs,
             self.generate_reports,
             self.write_outputs
-        ])
+        ]
+        if self.get_setting("synthesis.inputs.retime_modules"):
+            steps_methods.insert(1, self.retime_modules)
+        return self.make_steps_from_methods(steps_methods)
 
     def do_pre_steps(self, first_step: HammerToolStep) -> bool:
         assert super().do_pre_steps(first_step)
