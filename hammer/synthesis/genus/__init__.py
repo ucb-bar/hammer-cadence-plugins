@@ -276,7 +276,7 @@ class Genus(HammerSynthesisTool, CadenceTool):
                 "}\n" \
                 "set_db / .retime_verification_flow true"
             )
-            self.verbose_append(rt_tcl)
+            self.append(rt_tcl)
 
         return True
 
