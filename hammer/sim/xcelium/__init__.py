@@ -173,7 +173,7 @@ class xcelium(HammerSimTool, CadenceTool):
                     "compression": False,
                     "probe_paths": None,
                     "tcl_opts": None,
-                    "shm_incr": "5G"}
+                    "shm_incr": None}
     
     # Because key-driven waveform spec is optional, should return none-type dict by default.
     wav_opts = {}
@@ -182,6 +182,7 @@ class xcelium(HammerSimTool, CadenceTool):
       wav_opts = self.get_settings_from_dict(wav_opts_def, self.sim_waveform_prefix, optional_keys)
       wav_opts_proc = wav_opts.copy()
       wav_opts_proc ["compression"] = "-compress" if wav_opts ["compression"] else ""
+      wav_opts_proc ["shm_incr"] = f"-shm_incr {wav_opts['shm_incr']}" if wav_opts ["shm_incr"] else ""
       if wav_opts_proc ["probe_paths"] is not None: wav_opts_proc ["probe_paths"] = "\n".join(["probe -create " + path for path in wav_opts_proc ["probe_paths"]]) 
       if wav_opts_proc ["tcl_opts"] is not None:    wav_opts_proc ["tcl_opts"]    = "\n".join(opt for opt in wav_opts_proc ["tcl_opts"]) 
     else: 
