@@ -121,7 +121,10 @@ class Genus(HammerSynthesisTool, CadenceTool):
 
     @property
     def mapped_hier_v_path(self) -> str:
-        return os.path.join(self.run_dir, "genus_invs_des/genus.v.gz")
+        if self.version() >= self.version_number("191"):
+            return os.path.join(self.run_dir, "{top}_noilm.mapped.v".format(self.top_module))
+        else:
+            return os.path.join(self.run_dir, "genus_invs_des/genus.v.gz")
 
     @property
     def mapped_sdc_path(self) -> str:
@@ -342,6 +345,8 @@ class Genus(HammerSynthesisTool, CadenceTool):
         top = self.top_module
 
         verbose_append("write_hdl > {}".format(self.mapped_v_path))
+        if self.hierarchical_mode.is_nonleaf_hierarchical() and self.version() >= self.version_number("191"):
+            verbose_append("write_hdl -exclude_ilm > {}".format(self.mapped_hier_v_path))
         verbose_append("write_script > {}.mapped.scr".format(top))
         corners = self.get_mmmc_corners()
         if corners:
